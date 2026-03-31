@@ -1,0 +1,27 @@
+sequenceDiagram
+  participant WA as WhatsApp Provider
+  participant API as Nexso Backend
+  participant DB as Postgres
+  participant VN as Vendor
+
+  WA->>API: POST /webhook/whatsapp (raw payload)
+  API->>API: Verify signature (stub)
+  API->>DB: Insert raw payload (idempotent)
+  API->>DB: Lookup sender by whatsapp_number
+  API->>API: Detect intent (keyword/menu)
+  alt intent = CREATE_TICKET
+    API->>DB: Dedup check (user+category+time window)
+    API->>DB: Insert ticket (status OPEN)
+    API->>DB: Find vendors by society+category
+    API->>DB: Assign vendor + set status ASSIGNED
+    API->>VN: Send WhatsApp notification (stub)
+    API->>DB: Log notification activity
+  else intent = UPDATE_TICKET
+    API->>DB: Fetch ticket by ticket_id
+    API->>API: Validate role-based transition
+    API->>DB: Update status
+    API->>DB: Insert activity log
+  else OTHER
+    API->>DB: Store message attached to conversation (future)
+  end
+  API-->>WA: 200 OK (ack)

@@ -1,0 +1,18 @@
+flowchart TD
+    OPEN --> ASSIGNED
+    ASSIGNED --> IN_PROGRESS
+    ASSIGNED --> RESOLVED
+    IN_PROGRESS --> RESOLVED
+    RESOLVED --> CLOSED
+
+    classDef owner fill:#e3f2fd,stroke:#90caf9,stroke-width:1px
+    classDef admin fill:#f1f8e9,stroke:#a5d6a7,stroke-width:1px
+    classDef vendor fill:#fff3e0,stroke:#ffb74d,stroke-width:1px
+
+    %% Role permissions (annotated)
+    OPEN:::admin -->|Admin only| ASSIGNED
+    ASSIGNED:::vendor -->|Vendor| IN_PROGRESS
+    ASSIGNED:::vendor -->|Vendor| RESOLVED
+    IN_PROGRESS:::vendor -->|Vendor| RESOLVED
+    RESOLVED:::admin -->|Admin| CLOSED
+    RESOLVED:::owner -->|Owner| CLOSED
