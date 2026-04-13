@@ -1,24 +1,33 @@
-# Nexso Frontend (Message Simulator)
+# Nexso Frontend
 
-A tiny Vite + React app to simulate sending WhatsApp-like payloads to the Nexso backend webhook.
+React + Vite admin dashboard for tickets, users, vendors, and complaint operations.
 
 ## Configure
 
-- Backend base URL defaults to `http://localhost:3000`.
-- Optionally set `VITE_API_BASE` in `.env.local` to override.
+Copy [frontend/.env.example](frontend/.env.example) to `.env` or `.env.local`.
 
-## Run
+- `VITE_API_BASE`: public base URL of the backend API.
+- `VITE_ENABLE_DEMO_LOGIN`: optional frontend-only demo gate. Keep this `false` for normal deployments unless you explicitly want a lightweight demo login.
+- `VITE_DEMO_USERNAME` and `VITE_DEMO_PASSWORD`: only used when demo login is enabled.
+
+## Run Locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open the printed local URL (default: http://localhost:5173).
+## Build For Deployment
 
-## Usage
+```bash
+npm install
+npm run build
+```
 
-- Choose message type (Text or Image)
-- Edit prefilled fields as needed
-- Click "Send Message" to POST to `/webhook/whatsapp` on the backend.
-- Response JSON is rendered below the form.
+The production build is emitted to `dist/` and can be deployed to static hosting such as Vercel, Netlify, S3 + CloudFront, or Nginx.
+
+## Deployment Notes
+
+1. Deploy the backend first and copy its public origin into `VITE_API_BASE`.
+2. If you deploy the frontend under a subpath instead of a domain root, add a router basename before deployment.
+3. The built-in login is demo-only because it runs fully in the browser. For real access control, use provider auth, reverse-proxy auth, or implement backend authentication.

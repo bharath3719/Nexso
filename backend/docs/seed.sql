@@ -7,11 +7,15 @@ SELECT 'Sunshine Residency'
 WHERE NOT EXISTS (SELECT 1 FROM societies WHERE name = 'Sunshine Residency');
 
 -- 2) Seed an OWNER user bound to the society
-INSERT INTO users (whatsapp_number, role, society_id)
-SELECT '+911234567890', 'OWNER', s.id
+INSERT INTO users (whatsapp_number, role, society_id, name, apartment)
+SELECT '+911234567890', 'OWNER', s.id, 'Rohan Mehta', 'A-101'
 FROM societies s
 WHERE s.name = 'Sunshine Residency'
-ON CONFLICT (whatsapp_number) DO NOTHING;
+ON CONFLICT (whatsapp_number) DO UPDATE
+SET role = EXCLUDED.role,
+	society_id = EXCLUDED.society_id,
+	name = EXCLUDED.name,
+	apartment = EXCLUDED.apartment;
 
 -- 3) Seed a PLUMBING vendor bound to the society
 INSERT INTO vendors (name, whatsapp_number, society_id, categories, active)

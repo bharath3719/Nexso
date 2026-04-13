@@ -27,6 +27,8 @@ function parseArgs() {
 async function main() {
   const args = parseArgs();
   const phone = args.phone || args.whatsapp || args.number;
+  const name = args.name || null;
+  const apartment = args.apartment || args.flat || null;
   if (!phone) {
     console.error("Missing --phone <E.164 number> argument");
     process.exit(1);
@@ -47,11 +49,12 @@ async function main() {
   // Insert user if missing
   const existing = await dbQuery("SELECT id FROM users WHERE whatsapp_number = $1", [phone]);
   if (existing?.rows?.[0]) {
-    console.log("User already exists:", existing.rows[0].id, phone);
+    const updated = await dbQuery("UPDATE users SET role = $2, society_id = $3, name = COALESCE($4, name), apartment = COALESCE($5, apartment) WHERE whatsapp_number = $1 RETURNING id, whatsapp_number, name, role, society_id, apartment", [phone, role, societyId, name, apartment]);
+    console.log("User updated:", updated?.rows?.[0] || {});
     process.exit(0);
   }
 
-  const u = await dbQuery("INSERT INTO users (whatsapp_number, role, society_id) VALUES ($1, $2, $3) RETURNING id, whatsapp_number, role, society_id", [phone, role, societyId]);
+  const u = await dbQuery("INSERT INTO users (whatsapp_number, role, society_id, name, apartment) VALUES ($1, $2, $3, $4, $5) RETURNING id, whatsapp_number, name, role, society_id, apartment", [phone, role, societyId, name, apartment]);
   console.log("User created:", u?.rows?.[0] || {});
 }
 

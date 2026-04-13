@@ -10,7 +10,8 @@
     "db:seed": "psql \"$DATABASE_URL\" -f docs/seed.sql",
     "simulate:msg": "node scripts/simulate_message.js",
     "db:add-user": "node scripts/add_user.js",
-    "db:add-test-user": "node scripts/add_test_user.js"
+    "db:add-test-user": "node scripts/add_test_user.js",
+    "db:add-tickets": "node scripts/add_tickets.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

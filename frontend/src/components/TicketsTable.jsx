@@ -3,13 +3,14 @@ import { Dropdown, IconButton, PrimaryButton, Spinner, SpinnerSize, Stack, Text,
 import { ticketStatuses } from "../constants.js";
 import { formatDate } from "../utils/formatDate.js";
 import { listStyles } from "../theme.js";
-import { DetailsList, DetailsListLayoutMode, SelectionMode } from "@fluentui/react";
+import { ConstrainMode, DetailsList, DetailsListLayoutMode, SelectionMode } from "@fluentui/react";
 
 export function TicketsTable({ items, loading, emptyLabel, showFilters = true, pageSize = null, onAction = null, actionLabel = "Manage", extraColumns = [] }) {
   const [filterText, setFilterText] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [sortState, setSortState] = useState({ key: "created", isDesc: true });
   const [page, setPage] = useState(0);
+  const [columnWidths, setColumnWidths] = useState({});
 
   const columns = useMemo(() => {
     const handleSort = (_e, column) => {
@@ -18,12 +19,12 @@ export function TicketsTable({ items, loading, emptyLabel, showFilters = true, p
     };
 
     const baseColumns = [
-      { key: "id", name: "ID", fieldName: "id", minWidth: 90, maxWidth: 140, onColumnClick: handleSort, isSorted: sortState.key === "id", isSortedDescending: sortState.isDesc },
-      { key: "status", name: "Status", fieldName: "status", minWidth: 90, maxWidth: 120, onColumnClick: handleSort, isSorted: sortState.key === "status", isSortedDescending: sortState.isDesc },
-      { key: "category", name: "Category", fieldName: "category", minWidth: 120, maxWidth: 180, onColumnClick: handleSort, isSorted: sortState.key === "category", isSortedDescending: sortState.isDesc },
-      { key: "description", name: "Description", fieldName: "description", minWidth: 220, onColumnClick: handleSort, isSorted: sortState.key === "description", isSortedDescending: sortState.isDesc },
+      { key: "id", name: "ID", fieldName: "id", minWidth: 90, maxWidth: 140, onColumnClick: handleSort, isSorted: sortState.key === "id", isSortedDescending: sortState.isDesc, isResizable: true },
+      { key: "status", name: "Status", fieldName: "status", minWidth: 90, maxWidth: 120, onColumnClick: handleSort, isSorted: sortState.key === "status", isSortedDescending: sortState.isDesc, isResizable: true },
+      { key: "category", name: "Category", fieldName: "category", minWidth: 120, maxWidth: 180, onColumnClick: handleSort, isSorted: sortState.key === "category", isSortedDescending: sortState.isDesc, isResizable: true },
+      { key: "description", name: "Description", fieldName: "description", minWidth: 220, onColumnClick: handleSort, isSorted: sortState.key === "description", isSortedDescending: sortState.isDesc, isResizable: true },
       ...extraColumns,
-      { key: "created", name: "Created", fieldName: "created_at", minWidth: 180, onRender: (item) => formatDate(item.created_at), onColumnClick: handleSort, isSorted: sortState.key === "created", isSortedDescending: sortState.isDesc },
+      { key: "created", name: "Created", fieldName: "created_at", minWidth: 180, onRender: (item) => formatDate(item.created_at), onColumnClick: handleSort, isSorted: sortState.key === "created", isSortedDescending: sortState.isDesc, isResizable: true },
     ];
 
     if (onAction) {
@@ -32,12 +33,17 @@ export function TicketsTable({ items, loading, emptyLabel, showFilters = true, p
         name: "Action",
         minWidth: 110,
         maxWidth: 120,
+        isResizable: true,
         onRender: (item) => <PrimaryButton text={actionLabel} onClick={() => onAction(item)} />,
       });
     }
 
-    return baseColumns;
-  }, [sortState, onAction, actionLabel, extraColumns]);
+    return baseColumns.map((col) => ({
+      ...col,
+      isResizable: col.isResizable ?? true,
+      currentWidth: columnWidths[col.key] ?? col.currentWidth,
+    }));
+  }, [sortState, onAction, actionLabel, extraColumns, columnWidths]);
 
   const processedItems = useMemo(() => {
     const source = items || [];
@@ -105,7 +111,18 @@ export function TicketsTable({ items, loading, emptyLabel, showFilters = true, p
         rather than the table's natural (potentially wider) width.
       */}
       <div style={{ overflowX: "auto", overflowY: "visible", width: "100%", minWidth: 0 }}>
-        <DetailsList items={pageSize ? processedItems.slice(page * pageSize, page * pageSize + pageSize) : processedItems} columns={columns} layoutMode={DetailsListLayoutMode.fixedColumns} selectionMode={SelectionMode.none} styles={listStyles} />
+        <DetailsList
+          items={pageSize ? processedItems.slice(page * pageSize, page * pageSize + pageSize) : processedItems}
+          columns={columns}
+          layoutMode={DetailsListLayoutMode.fixedColumns}
+          constrainMode={ConstrainMode.unconstrained}
+          selectionMode={SelectionMode.none}
+          styles={listStyles}
+          onColumnResize={(column, newWidth) => {
+            if (!column?.key || !newWidth) return;
+            setColumnWidths((prev) => ({ ...prev, [column.key]: newWidth }));
+          }}
+        />
       </div>
 
       {pageSize ? (

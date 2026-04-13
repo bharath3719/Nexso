@@ -12,10 +12,17 @@ import { PaymentsPage } from "./pages/Payments.jsx";
 
 initializeIcons();
 
-const DEFAULT_CREDENTIALS = { username: "admin", password: "admin123" };
 const AUTH_KEY = "nexso_authed";
 
-function LoginScreen({ onLogin, error }) {
+const demoAuthEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEMO_LOGIN === "true";
+const demoCredentials = {
+  username: import.meta.env.VITE_DEMO_USERNAME || (import.meta.env.DEV ? "admin" : ""),
+  password: import.meta.env.VITE_DEMO_PASSWORD || (import.meta.env.DEV ? "admin123" : ""),
+};
+const hasDemoCredentials = Boolean(demoCredentials.username && demoCredentials.password);
+const useDemoLogin = demoAuthEnabled && hasDemoCredentials;
+
+function LoginScreen({ onLogin, error, helperText }) {
   const [form, setForm] = useState({ username: "", password: "" });
 
   const handleSubmit = (e) => {
@@ -31,7 +38,7 @@ function LoginScreen({ onLogin, error }) {
             Nexso Login
           </Text>
           <Text variant="small" styles={{ root: { color: "#5f6a7a", textAlign: "center" } }}>
-            Enter the default credentials to continue.
+            Sign in to continue.
           </Text>
           {error ? <MessageBar messageBarType={MessageBarType.error}>{error}</MessageBar> : null}
           <form onSubmit={handleSubmit}>
@@ -39,9 +46,11 @@ function LoginScreen({ onLogin, error }) {
               <TextField label="Username" value={form.username} onChange={(_, v) => setForm((s) => ({ ...s, username: v || "" }))} autoComplete="username" required />
               <TextField label="Password" type="password" value={form.password} onChange={(_, v) => setForm((s) => ({ ...s, password: v || "" }))} autoComplete="current-password" required />
               <PrimaryButton type="submit" text="Sign in" />
-              <Text variant="xSmall" styles={{ root: { color: "#7a8698", textAlign: "center" } }}>
-                Default: {DEFAULT_CREDENTIALS.username} / {DEFAULT_CREDENTIALS.password}
-              </Text>
+              {helperText ? (
+                <Text variant="xSmall" styles={{ root: { color: "#7a8698", textAlign: "center" } }}>
+                  {helperText}
+                </Text>
+              ) : null}
             </Stack>
           </form>
         </Stack>
@@ -52,26 +61,32 @@ function LoginScreen({ onLogin, error }) {
 
 export default function App() {
   const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:3000";
-  const [authed, setAuthed] = useState(false);
+  const [authed, setAuthed] = useState(!useDemoLogin);
   const [loginError, setLoginError] = useState("");
 
   useEffect(() => {
+    if (!useDemoLogin) {
+      setAuthed(true);
+      return;
+    }
+
     const saved = localStorage.getItem(AUTH_KEY);
     if (saved === "true") setAuthed(true);
   }, []);
 
   const handleLogin = (form) => {
-    if (form.username === DEFAULT_CREDENTIALS.username && form.password === DEFAULT_CREDENTIALS.password) {
+    if (form.username === demoCredentials.username && form.password === demoCredentials.password) {
       setAuthed(true);
       localStorage.setItem(AUTH_KEY, "true");
       setLoginError("");
     } else {
-      setLoginError("Invalid credentials. Use the defaults shown below.");
+      setLoginError("Invalid credentials.");
     }
   };
 
-  if (!authed) {
-    return <LoginScreen onLogin={handleLogin} error={loginError} />;
+  if (useDemoLogin && !authed) {
+    const helperText = import.meta.env.DEV ? `Default: ${demoCredentials.username} / ${demoCredentials.password}` : "Demo credentials are configured through environment variables for this deployment.";
+    return <LoginScreen onLogin={handleLogin} error={loginError} helperText={helperText} />;
   }
 
   return (

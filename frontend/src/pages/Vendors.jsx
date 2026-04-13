@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { DefaultButton, Dropdown, IconButton, MessageBar, MessageBarType, Modal, PrimaryButton, Stack, Text, TextField } from "@fluentui/react";
-import { DetailsList, DetailsListLayoutMode, SelectionMode } from "@fluentui/react";
+import { ConstrainMode, DetailsList, DetailsListLayoutMode, SelectionMode } from "@fluentui/react";
 import { useJsonData } from "../hooks/useJsonData.js";
 import { listStyles } from "../theme.js";
 
@@ -8,6 +8,7 @@ export function VendorsPage({ apiBase }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const { loading, data, error } = useJsonData(`${apiBase}/api/vendors?limit=200&k=${refreshKey}`);
   const vendors = data?.vendors || [];
+  const [columnWidths, setColumnWidths] = useState({});
   const [form, setForm] = useState({ name: "", code: "", whatsapp_number: "", categories: "", active: true });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -16,15 +17,17 @@ export function VendorsPage({ apiBase }) {
 
   const vendorColumns = useMemo(
     () => [
-      { key: "name", name: "Name", fieldName: "name", minWidth: 140 },
-      { key: "code", name: "Code", fieldName: "code", minWidth: 120 },
-      { key: "whatsapp", name: "WhatsApp", fieldName: "whatsapp_number", minWidth: 140 },
-      { key: "categories", name: "Categories", minWidth: 140, onRender: (v) => (v.categories || []).join(", ") },
-      { key: "active", name: "Active", minWidth: 80, onRender: (v) => (v.active === false ? "No" : "Yes") },
+      { key: "name", name: "Name", fieldName: "name", minWidth: 140, isResizable: true, currentWidth: columnWidths.name },
+      { key: "code", name: "Code", fieldName: "code", minWidth: 120, isResizable: true, currentWidth: columnWidths.code },
+      { key: "whatsapp", name: "WhatsApp", fieldName: "whatsapp_number", minWidth: 140, isResizable: true, currentWidth: columnWidths.whatsapp },
+      { key: "categories", name: "Categories", minWidth: 140, isResizable: true, currentWidth: columnWidths.categories, onRender: (v) => (v.categories || []).join(", ") },
+      { key: "active", name: "Active", minWidth: 80, isResizable: true, currentWidth: columnWidths.active, onRender: (v) => (v.active === false ? "No" : "Yes") },
       {
         key: "actions",
         name: "Actions",
         minWidth: 160,
+        isResizable: true,
+        currentWidth: columnWidths.actions,
         onRender: (item) => (
           <Stack horizontal tokens={{ childrenGap: 6 }}>
             <IconButton
@@ -60,7 +63,7 @@ export function VendorsPage({ apiBase }) {
         ),
       },
     ],
-    [apiBase],
+    [apiBase, columnWidths],
   );
 
   const handleSubmit = async (e) => {
@@ -117,7 +120,18 @@ export function VendorsPage({ apiBase }) {
       {error ? <MessageBar messageBarType={MessageBarType.error}>{error}</MessageBar> : null}
 
       <Stack styles={{ root: { overflowX: "auto", width: "100%" } }}>
-        <DetailsList items={vendors} columns={vendorColumns} layoutMode={DetailsListLayoutMode.justified} selectionMode={SelectionMode.none} styles={listStyles} />
+        <DetailsList
+          items={vendors}
+          columns={vendorColumns}
+          layoutMode={DetailsListLayoutMode.fixedColumns}
+          constrainMode={ConstrainMode.unconstrained}
+          selectionMode={SelectionMode.none}
+          styles={listStyles}
+          onColumnResize={(column, newWidth) => {
+            if (!column?.key || !newWidth) return;
+            setColumnWidths((prev) => ({ ...prev, [column.key]: newWidth }));
+          }}
+        />
       </Stack>
 
       <Modal isOpen={modalOpen} onDismiss={() => setModalOpen(false)} isBlocking={false}>
