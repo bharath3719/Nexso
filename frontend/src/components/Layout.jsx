@@ -34,7 +34,8 @@ export function Layout({ navLinks, children }) {
           <Nav
             groups={[{ links: navLinks.map((l) => ({ name: l.name, key: l.key, url: l.path })) }]}
             selectedKey={selectedKey}
-            onLinkClick={(_e, item) => {
+            onLinkClick={(event, item) => {
+              event?.preventDefault();
               if (item?.url) navigate(item.url);
             }}
           />
