@@ -11,10 +11,27 @@ import societiesRouter from "./routes/societies.js";
 
 const app = express();
 
-const corsOrigins = (process.env.CORS_ORIGIN || "")
-  .split(",")
-  .map((value) => value.trim())
-  .filter(Boolean);
+function getOriginMatchValues(value) {
+  const trimmed = (value || "").trim().replace(/\/+$/, "");
+
+  if (!trimmed) return [];
+
+  try {
+    const url = new URL(trimmed);
+    return [url.origin, url.host];
+  } catch {
+    const withoutProtocol = trimmed.replace(/^https?:\/\//, "");
+    const host = withoutProtocol.split("/")[0];
+    return host ? [trimmed, host] : [trimmed];
+  }
+}
+
+const corsOrigins = new Set(
+  (process.env.CORS_ORIGIN || "")
+    .split(",")
+    .flatMap((value) => getOriginMatchValues(value))
+    .filter(Boolean),
+);
 
 if (process.env.TRUST_PROXY === "true") {
   app.set("trust proxy", 1);
@@ -22,10 +39,10 @@ if (process.env.TRUST_PROXY === "true") {
 
 app.use(
   cors(
-    corsOrigins.length
+    corsOrigins.size
       ? {
           origin(origin, callback) {
-            if (!origin || corsOrigins.includes(origin)) {
+            if (!origin || getOriginMatchValues(origin).some((value) => corsOrigins.has(value))) {
               callback(null, true);
               return;
             }
