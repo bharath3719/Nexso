@@ -141,6 +141,17 @@ async function findSocietyByCode(code) {
  return r?.rows?.[0] || null;
 }
 
+async function findSocietyById(id) {
+ if (!id) return null;
+ const r = await dbQuery("SELECT * FROM societies WHERE id = $1 LIMIT 1", [id]);
+ return r?.rows?.[0] || null;
+}
+
+async function findDefaultSociety() {
+ const r = await dbQuery("SELECT * FROM societies ORDER BY id ASC LIMIT 1");
+ return r?.rows?.[0] || null;
+}
+
 async function createSociety(name) {
  const r = await dbQuery("INSERT INTO societies (name) VALUES ($1) RETURNING *", [name]);
  return r?.rows?.[0] || null;
@@ -158,11 +169,23 @@ async function upsertUserFromFlow(whatsappNumber, fields, identity) {
  const apartment = fields.apartment || fields.flat || null;
  const name = fields.name || fields.full_name || null;
 
- if (!societyCode) {
- return { error: "missing_society_code" };
+ let society = null;
+ if (societyCode) {
+ society = await findSocietyByCode(societyCode);
  }
 
- const society = await findSocietyByCode(societyCode);
+ if (!society && identity?.society_id) {
+ society = await findSocietyById(identity.society_id);
+ }
+
+ if (!society) {
+ society = await findDefaultSociety();
+ }
+
+ if (!society) {
+ society = await createSociety("Default Society");
+ }
+
  if (!society) {
  return { error: "invalid_society_code" };
  }
