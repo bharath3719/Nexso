@@ -1,8 +1,11 @@
 import express from "express";
 import { dbQuery } from "../db/index.js";
 import { TicketStatus, Roles, canTransition } from "../utils/stateMachine.js";
+import { notifyVendor, sendWhatsAppText } from "../services/notifications.js";
+import { requireAdmin } from "../middleware/auth.js";
 
 const router = express.Router();
+router.use(requireAdmin);
 
 // GET /api/tickets?status=&society_id=&category=&limit=50&offset=0
 router.get("/", async (req, res) => {
@@ -54,6 +57,23 @@ router.get("/", async (req, res) => {
     return res.json({ tickets: r?.rows || [] });
   } catch (err) {
     console.error("List tickets error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// GET /api/tickets/stats — lightweight open/unassigned counts for the nav badge
+router.get("/stats", async (_req, res) => {
+  try {
+    const r = await dbQuery(`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'OPEN')     AS open,
+        COUNT(*) FILTER (WHERE status = 'ASSIGNED') AS assigned
+      FROM tickets
+    `);
+    const row = r?.rows?.[0] || {};
+    return res.json({ open: Number(row.open || 0), assigned: Number(row.assigned || 0) });
+  } catch (err) {
+    console.error("Ticket stats error:", err);
     return res.status(500).json({ error: "internal_error" });
   }
 });
@@ -121,6 +141,7 @@ router.patch("/:id", async (req, res) => {
          t.assigned_vendor_id AS vendor_id,
          s.name AS society_name,
          v.name AS vendor_name,
+         v.whatsapp_number AS vendor_whatsapp,
          u.whatsapp_number AS raised_by_number,
          u.name AS raised_by_name,
          u.apartment AS raised_by_apartment
@@ -132,7 +153,42 @@ router.patch("/:id", async (req, res) => {
       [id],
     );
 
-    return res.json({ ticket: joined?.rows?.[0] || updatedTicket });
+    const fullTicket = joined?.rows?.[0] || updatedTicket;
+
+    const newVendorId   = vendorIdNormalized ? Number(vendorIdNormalized) : null;
+    const oldVendorId   = ticket.assigned_vendor_id ? Number(ticket.assigned_vendor_id) : null;
+    const vendorChanged = vendorProvided && newVendorId && newVendorId !== oldVendorId;
+    const statusChanged = status && status !== ticket.status;
+
+    // Notify vendor when newly assigned
+    if (vendorChanged && fullTicket?.vendor_whatsapp) {
+      notifyVendor(fullTicket, { id: newVendorId, whatsapp_number: fullTicket.vendor_whatsapp }).catch(() => {});
+    }
+
+    // Notify resident
+    if (fullTicket?.raised_by_number) {
+      const ref      = fullTicket.ticket_id || `#${fullTicket.id}`;
+      const vendor   = fullTicket.vendor_name || "our team";
+      const category = (fullTicket.category || "complaint").toLowerCase();
+      let msg;
+
+      if (vendorChanged) {
+        // Vendor assignment message covers the status change too
+        msg = `Your ${category} complaint (${ref}) has been assigned to ${vendor}. They will attend to it shortly. We'll keep you updated.`;
+      } else if (statusChanged) {
+        const statusMessages = {
+          ASSIGNED:    `Your ${category} complaint (${ref}) has been assigned to ${vendor}. They will attend to it shortly.`,
+          IN_PROGRESS: `Update on your complaint (${ref}): ${vendor} has started working on it.`,
+          RESOLVED:    `Your complaint (${ref}) has been resolved. If the issue persists, please message us again.`,
+          CLOSED:      `Your complaint (${ref}) has been closed. Thank you.`,
+        };
+        msg = statusMessages[status];
+      }
+
+      if (msg) sendWhatsAppText(fullTicket.raised_by_number, msg).catch(() => {});
+    }
+
+    return res.json({ ticket: fullTicket });
   } catch (err) {
     console.error("Update ticket error:", err);
     return res.status(500).json({ error: "internal_error" });

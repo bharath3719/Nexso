@@ -1,28 +1,66 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { initializeIcons, ThemeProvider, Stack, Text, MessageBar, MessageBarType, TextField, PrimaryButton } from "@fluentui/react";
-import { navLinks } from "./constants.js";
-import { shellTheme } from "./theme.js";
-import { Layout } from "./components/Layout.jsx";
-import { Dashboard } from "./pages/Dashboard.jsx";
-import { UsersPage } from "./pages/Users.jsx";
-import { ComplaintsPage } from "./pages/Complaints.jsx";
-import { VendorsPage } from "./pages/Vendors.jsx";
-import { PaymentsPage } from "./pages/Payments.jsx";
+import {
+  initializeIcons, ThemeProvider, Stack, Text,
+  MessageBar, MessageBarType, TextField, PrimaryButton, Spinner,
+} from "@fluentui/react";
+
+import { navLinks }           from "./constants.js";
+import { shellTheme, loginScreenStyles } from "./theme.js";
+import { Layout }             from "./components/Layout.jsx";
+import { Dashboard }          from "./pages/Dashboard.jsx";
+import { UsersPage }          from "./pages/Users.jsx";
+import { ComplaintsPage }     from "./pages/Complaints.jsx";
+import { VendorsPage }        from "./pages/Vendors.jsx";
+import { PaymentsPage }       from "./pages/Payments.jsx";
+import { MaintenancePage }    from "./pages/Maintenance.jsx";
+import { OnboardingPage }     from "./pages/Onboarding.jsx";
+import { OnboardingNewPage }  from "./pages/OnboardingNew.jsx";
+import { SocietyDetailPage }  from "./pages/SocietyDetail.jsx";
+
+import { SecretaryLayout }       from "./components/SecretaryLayout.jsx";
+import { SecretaryDashboard }    from "./pages/secretary/SecretaryDashboard.jsx";
+import { SecretaryResidents }    from "./pages/secretary/SecretaryResidents.jsx";
+import { SecretaryTickets }      from "./pages/secretary/SecretaryTickets.jsx";
+import { SecretaryProfile }      from "./pages/secretary/SecretaryProfile.jsx";
+import { SecretaryMaintenance }  from "./pages/secretary/SecretaryMaintenance.jsx";
+
+import { VendorLayout }    from "./components/VendorLayout.jsx";
+import { VendorDashboard } from "./pages/vendor/VendorDashboard.jsx";
+import { VendorTickets }   from "./pages/vendor/VendorTickets.jsx";
+import { VendorProfile }   from "./pages/vendor/VendorProfile.jsx";
+
+import { PasswordChangeFields } from "./components/PasswordChangeFields.jsx";
+
+import {
+  saveSession, clearSession,
+  getRole, getSocietyId, getSocietyName, getUsername, getVendorId,
+  isLoggedIn,
+} from "./utils/authSession.js";
+import { api } from "./services/api.js";
 
 initializeIcons();
 
-const AUTH_KEY = "nexso_authed";
+// ─── Shared auth card wrapper ──────────────────────────────────────────────────
 
-const demoAuthEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEMO_LOGIN === "true";
-const demoCredentials = {
-  username: import.meta.env.VITE_DEMO_USERNAME || (import.meta.env.DEV ? "admin" : ""),
-  password: import.meta.env.VITE_DEMO_PASSWORD || (import.meta.env.DEV ? "admin123" : ""),
-};
-const hasDemoCredentials = Boolean(demoCredentials.username && demoCredentials.password);
-const useDemoLogin = demoAuthEnabled && hasDemoCredentials;
+function AuthCard({ title, subtitle, error, children }) {
+  return (
+    <ThemeProvider theme={shellTheme}>
+      <Stack verticalFill verticalAlign="center" horizontalAlign="center" styles={loginScreenStyles.outer}>
+        <Stack styles={loginScreenStyles.card} tokens={{ childrenGap: 16 }}>
+          <Text variant="xLarge" styles={loginScreenStyles.title}>{title}</Text>
+          <Text variant="small" styles={loginScreenStyles.subtitle}>{subtitle}</Text>
+          {error && <MessageBar messageBarType={MessageBarType.error}>{error}</MessageBar>}
+          {children}
+        </Stack>
+      </Stack>
+    </ThemeProvider>
+  );
+}
 
-function LoginScreen({ onLogin, error, helperText }) {
+// ─── LoginScreen ──────────────────────────────────────────────────────────────
+
+function LoginScreen({ onLogin, error, loading }) {
   const [form, setForm] = useState({ username: "", password: "" });
 
   const handleSubmit = (e) => {
@@ -31,75 +69,239 @@ function LoginScreen({ onLogin, error, helperText }) {
   };
 
   return (
-    <ThemeProvider theme={shellTheme}>
-      <Stack verticalFill verticalAlign="center" horizontalAlign="center" styles={{ root: { background: "#f5f7fa", padding: 16 } }}>
-        <Stack styles={{ root: { width: 380, maxWidth: "90vw", background: "#fff", padding: 24, borderRadius: 12, boxShadow: "0 12px 28px rgba(0,0,0,0.12)" } }} tokens={{ childrenGap: 16 }}>
-          <Text variant="xLarge" styles={{ root: { fontWeight: 700, textAlign: "center" } }}>
-            Nexso Login
-          </Text>
-          <Text variant="small" styles={{ root: { color: "#5f6a7a", textAlign: "center" } }}>
-            Sign in to continue.
-          </Text>
-          {error ? <MessageBar messageBarType={MessageBarType.error}>{error}</MessageBar> : null}
-          <form onSubmit={handleSubmit}>
-            <Stack tokens={{ childrenGap: 12 }}>
-              <TextField label="Username" value={form.username} onChange={(_, v) => setForm((s) => ({ ...s, username: v || "" }))} autoComplete="username" required />
-              <TextField label="Password" type="password" value={form.password} onChange={(_, v) => setForm((s) => ({ ...s, password: v || "" }))} autoComplete="current-password" required />
-              <PrimaryButton type="submit" text="Sign in" />
-              {helperText ? (
-                <Text variant="xSmall" styles={{ root: { color: "#7a8698", textAlign: "center" } }}>
-                  {helperText}
-                </Text>
-              ) : null}
-            </Stack>
-          </form>
+    <AuthCard title="Nexso" subtitle="Sign in to continue." error={error}>
+      <form onSubmit={handleSubmit}>
+        <Stack tokens={{ childrenGap: 12 }}>
+          <TextField
+            label="Username"
+            placeholder="admin  or  BLD-XXXXXX"
+            value={form.username}
+            onChange={(_, v) => setForm((s) => ({ ...s, username: v || "" }))}
+            autoComplete="username"
+            required
+            disabled={loading}
+          />
+          <TextField
+            label="Password"
+            type="password"
+            value={form.password}
+            onChange={(_, v) => setForm((s) => ({ ...s, password: v || "" }))}
+            autoComplete="current-password"
+            required
+            disabled={loading}
+          />
+          {loading
+            ? <Spinner label="Signing in…" />
+            : <PrimaryButton type="submit" text="Sign in" />
+          }
         </Stack>
-      </Stack>
-    </ThemeProvider>
+      </form>
+    </AuthCard>
   );
 }
 
-export default function App() {
-  const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:3000";
-  const [authed, setAuthed] = useState(!useDemoLogin);
-  const [loginError, setLoginError] = useState("");
+// ─── ForcePasswordReset screen ────────────────────────────────────────────────
 
-  useEffect(() => {
-    if (!useDemoLogin) {
-      setAuthed(true);
-      return;
-    }
+function ForceResetScreen({ onReset, error, loading }) {
+  const [form, setForm] = useState({ currentPassword: "", newPassword: "", confirm: "" });
 
-    const saved = localStorage.getItem(AUTH_KEY);
-    if (saved === "true") setAuthed(true);
-  }, []);
-
-  const handleLogin = (form) => {
-    if (form.username === demoCredentials.username && form.password === demoCredentials.password) {
-      setAuthed(true);
-      localStorage.setItem(AUTH_KEY, "true");
-      setLoginError("");
-    } else {
-      setLoginError("Invalid credentials.");
-    }
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (form.newPassword !== form.confirm) return;
+    onReset(form);
   };
 
-  if (useDemoLogin && !authed) {
-    const helperText = import.meta.env.DEV ? `Default: ${demoCredentials.username} / ${demoCredentials.password}` : "Demo credentials are configured through environment variables for this deployment.";
-    return <LoginScreen onLogin={handleLogin} error={loginError} helperText={helperText} />;
+  const mismatch = form.confirm && form.newPassword !== form.confirm;
+
+  return (
+    <AuthCard
+      title="Set Your Password"
+      subtitle="You must change your password before continuing."
+      error={error}
+    >
+      <form onSubmit={handleSubmit}>
+        <Stack tokens={{ childrenGap: 12 }}>
+          <PasswordChangeFields
+            form={form}
+            onFieldChange={(field, v) => setForm((s) => ({ ...s, [field]: v }))}
+            mismatch={mismatch}
+            loading={loading}
+            currentLabel="Current (temporary) password"
+          />
+          {loading
+            ? <Spinner label="Saving…" />
+            : <PrimaryButton type="submit" text="Set Password" disabled={Boolean(mismatch)} />
+          }
+        </Stack>
+      </form>
+    </AuthCard>
+  );
+}
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+
+export default function App() {
+  const [session, setSession] = useState(() => ({
+    authed:             isLoggedIn(),
+    role:               getRole(),
+    societyId:          getSocietyId(),
+    societyName:        getSocietyName(),
+    username:           getUsername(),
+    vendorId:           getVendorId(),
+    forcePasswordReset: false,
+  }));
+  const [loginError,  setLoginError]  = useState("");
+  const [resetError,  setResetError]  = useState("");
+  const [loading,     setLoading]     = useState(false);
+
+  // ── Session-expiry handler (fired by api.js on 401) ───────────────────────
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setSession({ authed: false, role: null, societyId: null, societyName: null, username: null, vendorId: null, forcePasswordReset: false });
+      setLoginError("Your session has expired. Please sign in again.");
+    };
+    window.addEventListener("nexso:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("nexso:unauthorized", handleUnauthorized);
+  }, []);
+
+  // ── Login ─────────────────────────────────────────────────────────────────
+
+  const handleLogin = useCallback(async ({ username, password }) => {
+    setLoginError("");
+    setLoading(true);
+    try {
+      const data = await api.auth.login(username, password);
+      saveSession(data);
+      setSession({
+        authed:             true,
+        role:               data.portalRole,
+        societyId:          data.societyId,
+        societyName:        data.societyName,
+        username:           data.username,
+        vendorId:           data.vendorId || null,
+        forcePasswordReset: data.forcePasswordReset,
+      });
+    } catch (err) {
+      setLoginError(
+        err.code === "invalid_credentials"
+          ? "Incorrect username or password."
+          : err.status === 0
+            ? "Could not reach the server. Is the backend running?"
+            : "Login failed. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ── Force password reset ──────────────────────────────────────────────────
+
+  const handlePasswordReset = useCallback(async ({ currentPassword, newPassword }) => {
+    setResetError("");
+    setLoading(true);
+    try {
+      await api.auth.changePassword(currentPassword, newPassword);
+      setSession((s) => ({ ...s, forcePasswordReset: false }));
+    } catch (err) {
+      setResetError(
+        err.code === "current_password_wrong"
+          ? "Current password is incorrect."
+          : err.code === "password_too_short"
+            ? "Password must be at least 8 characters."
+            : err.status === 0
+              ? "Could not reach the server."
+              : "Failed to change password.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ── Logout ────────────────────────────────────────────────────────────────
+
+  const handleLogout = useCallback(() => {
+    clearSession();
+    setSession({ authed: false, role: null, societyId: null, societyName: null, username: null, vendorId: null, forcePasswordReset: false });
+    setLoginError("");
+  }, []);
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  if (!session.authed) {
+    return <LoginScreen onLogin={handleLogin} error={loginError} loading={loading} />;
   }
+
+  if (session.forcePasswordReset) {
+    return <ForceResetScreen onReset={handlePasswordReset} error={resetError} loading={loading} />;
+  }
+
+  // ── Secretary portal ──────────────────────────────────────────────────────
+
+  if (session.role === "SOCIETY_ADMIN") {
+    return (
+      <ThemeProvider theme={shellTheme}>
+        <BrowserRouter>
+          <SecretaryLayout
+            societyName={session.societyName}
+            onLogout={handleLogout}
+          >
+            <Routes>
+              <Route path="/"                    element={<Navigate to="/secretary" replace />} />
+              <Route path="/secretary"              element={<SecretaryDashboard societyId={session.societyId} societyName={session.societyName} />} />
+              <Route path="/secretary/residents"    element={<SecretaryResidents societyId={session.societyId} />} />
+              <Route path="/secretary/tickets"      element={<SecretaryTickets />} />
+              <Route path="/secretary/maintenance"  element={<SecretaryMaintenance />} />
+              <Route path="/secretary/profile"      element={<SecretaryProfile onLogout={handleLogout} />} />
+              <Route path="*"                    element={<Navigate to="/secretary" replace />} />
+            </Routes>
+          </SecretaryLayout>
+        </BrowserRouter>
+      </ThemeProvider>
+    );
+  }
+
+  // ── Vendor portal ─────────────────────────────────────────────────────────
+
+  if (session.role === "VENDOR") {
+    const vendorDisplayName = session.username;
+    return (
+      <ThemeProvider theme={shellTheme}>
+        <BrowserRouter>
+          <VendorLayout
+            vendorName={vendorDisplayName}
+            onLogout={handleLogout}
+          >
+            <Routes>
+              <Route path="/"               element={<Navigate to="/vendor" replace />} />
+              <Route path="/vendor"         element={<VendorDashboard vendorName={vendorDisplayName} />} />
+              <Route path="/vendor/tickets" element={<VendorTickets />} />
+              <Route path="/vendor/profile" element={<VendorProfile onLogout={handleLogout} />} />
+              <Route path="*"               element={<Navigate to="/vendor" replace />} />
+            </Routes>
+          </VendorLayout>
+        </BrowserRouter>
+      </ThemeProvider>
+    );
+  }
+
+  // ── Nexso Admin portal (existing UI) ─────────────────────────────────────
 
   return (
     <ThemeProvider theme={shellTheme}>
       <BrowserRouter>
-        <Layout navLinks={navLinks}>
+        <Layout navLinks={navLinks} onLogout={handleLogout}>
           <Routes>
-            <Route path="/" element={<Dashboard apiBase={apiBase} />} />
-            <Route path="/users" element={<UsersPage apiBase={apiBase} />} />
-            <Route path="/complaints" element={<ComplaintsPage apiBase={apiBase} />} />
-            <Route path="/vendors" element={<VendorsPage apiBase={apiBase} />} />
-            <Route path="/payments" element={<PaymentsPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/"               element={<Dashboard />} />
+            <Route path="/onboarding"     element={<OnboardingPage />} />
+            <Route path="/onboarding/new" element={<OnboardingNewPage />} />
+            <Route path="/onboarding/:id" element={<SocietyDetailPage />} />
+            <Route path="/users"          element={<UsersPage />} />
+            <Route path="/complaints"     element={<ComplaintsPage />} />
+            <Route path="/vendors"        element={<VendorsPage />} />
+            <Route path="/payments"       element={<PaymentsPage />} />
+            <Route path="/maintenance"    element={<MaintenancePage />} />
+            <Route path="*"               element={<Navigate to="/" replace />} />
           </Routes>
         </Layout>
       </BrowserRouter>

@@ -1,0 +1,27 @@
+# ─── Claude Code ───────────────────────────────────────────────
+CLAUDE.md
+.claude/
+
+# ─── Internal / planning docs ──────────────────────────────────
+REQUIREMENTS.md
+docs/
+
+# ─── OS & editor junk ──────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ─── Secrets / local environment ──────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ─── Dependency folders (root-level, if ever used) ─────────────
+node_modules/
+
+# ─── Logs ──────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*

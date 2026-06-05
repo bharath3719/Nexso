@@ -1,56 +1,56 @@
 import React from "react";
-import { CommandBar, Nav, Stack } from "@fluentui/react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { commandButtonStyles } from "../theme.js";
+import nexsoLogo from "../assets/logo.png";
+import { useShellState, ShellSidebar, SignOutButton } from "./LayoutShared.jsx";
+import { api } from "../services/api.js";
+import "../styles/Layout.css";
 
-export function Layout({ navLinks, children }) {
-  const location = useLocation();
-  const navigate = useNavigate();
+export function Layout({ navLinks, children, onLogout }) {
+  const { collapsed, setCollapsed, headerRef, selectedKey, cssVars, navigate } = useShellState(navLinks, "/");
 
-  const selectedKey = React.useMemo(() => {
-    const found = navLinks.find((l) => (l.path === "/" ? location.pathname === "/" : location.pathname.startsWith(l.path)));
-    return found?.key || navLinks[0]?.key;
-  }, [location.pathname, navLinks]);
+  const [openCount, setOpenCount] = React.useState(0);
+  React.useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try {
+        const d = await api.tickets.stats();
+        if (!cancelled) setOpenCount((d?.open ?? 0) + (d?.assigned ?? 0));
+      } catch { /* ignore */ }
+    }
+    poll();
+    const id = setInterval(poll, 30_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
 
   return (
-    <Stack verticalFill styles={{ root: { minHeight: "100vh", background: "#f5f7fa" } }}>
-      <CommandBar
-        items={[{ key: "brand", text: "Nexso", iconProps: { iconName: "Home" }, buttonStyles: commandButtonStyles, onClick: () => navigate("/") }]}
-        farItems={[]}
-        styles={{
-          root: {
-            background: "linear-gradient(90deg, #3b82f6 0%, #60a5fa 45%, #3b82f6 100%)",
-            color: "#fff",
-            padding: "0 8px",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-          },
-          primarySet: { color: "#fff" },
-          secondarySet: { color: "#fff" },
-        }}
-      />
+    <div className="layout-root" style={cssVars}>
+      <header ref={headerRef} className="layout-header">
+        <div className="layout-header-bar">
+          <div className="layout-logo" onClick={() => navigate("/")}>
+            <img src={nexsoLogo} alt="Nexso" className="layout-logo-img" />
+          </div>
+          {onLogout && (
+            <div style={{ marginLeft: "auto", paddingRight: 8 }}>
+              <SignOutButton onLogout={onLogout} />
+            </div>
+          )}
+        </div>
+      </header>
 
-      <Stack horizontal grow styles={{ root: { overflow: "hidden" } }}>
-        <Stack styles={{ root: { width: 240, flexShrink: 0, background: "#ffffff", boxShadow: "2px 0 12px rgba(0,0,0,0.05)", paddingTop: 12 } }}>
-          <Nav
-            groups={[{ links: navLinks.map((l) => ({ name: l.name, key: l.key, url: l.path })) }]}
-            selectedKey={selectedKey}
-            onLinkClick={(event, item) => {
-              event?.preventDefault();
-              if (item?.url) navigate(item.url);
-            }}
-          />
-        </Stack>
-
-        {/*
-          KEY FIX: `minWidth: 0` is required on any flex child that should shrink.
-          Without it, the flex item expands to fit its content and the inner
-          overflow container never gets a constrained width to scroll against.
-          `overflow: hidden` clips any stray overflow at this boundary.
-        */}
-        <Stack grow styles={{ root: { padding: 24, minWidth: 0, overflow: "hidden" } }} tokens={{ childrenGap: 16 }}>
-          {children}
-        </Stack>
-      </Stack>
-    </Stack>
+      <div className="layout-body">
+        <ShellSidebar
+          navLinks={navLinks}
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
+          selectedKey={selectedKey}
+          navigate={navigate}
+          getNavLabel={(l) =>
+            l.key === "dashboard" && openCount > 0
+              ? `${l.name}  (${openCount})`
+              : l.name
+          }
+        />
+        <main className="layout-content">{children}</main>
+      </div>
+    </div>
   );
 }

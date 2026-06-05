@@ -1,0 +1,73 @@
+/*
+ * Nexso — Global stylesheet
+ * ──────────────────────────
+ * This file provides:
+ *   1. CSS custom properties mirroring typography.js (for non-JS contexts like
+ *      plain HTML or future server-side templates).
+ *   2. A universal box-sizing reset.
+ *   3. Global body defaults (font stack, color, background).
+ *
+ * For component-level styling, always use typography.js (T / CSS_T exports).
+ * Do NOT add random utility classes here — keep it lean.
+ */
+
+/* ── Reset ──────────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* ── CSS custom properties ───────────────────────────────────────────────────
+   Mirror the values in typography.js so CSS-only contexts stay in sync.
+   Update both places when changing the scale.                               */
+:root {
+  /* Font family */
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  /* Typography scale */
+  --t-page-header-size:    22px;
+  --t-page-header-weight:  700;
+  --t-section-size:        15px;
+  --t-section-weight:      600;
+  --t-modal-header-size:   18px;
+  --t-modal-header-weight: 700;
+  --t-body-size:           14px;
+  --t-body-weight:         400;
+  --t-small-size:          13px;
+  --t-caption-size:        12px;
+
+  /* Text colours */
+  --c-text-primary:   #1e293b;
+  --c-text-body:      #334155;
+  --c-text-secondary: #64748b;
+  --c-text-muted:     #94a3b8;
+  --c-text-disabled:  #cbd5e1;
+
+  /* Surface / border */
+  --c-surface:  #f8fafc;
+  --c-border:   #e2e8f0;
+  --c-bg:       #f5f7fa;
+}
+
+/* ── Shared animations ───────────────────────────────────────────────────── */
+
+/* Used by onboarding modals (AddResidentModal, StructurePreviewModal).
+   Defined here so components don't need to inject <style> tags at runtime. */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(24px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+/* ── Global body defaults ────────────────────────────────────────────────── */
+body {
+  font-family: var(--font-sans);
+  font-size:   var(--t-body-size);
+  font-weight: var(--t-body-weight);
+  color:       var(--c-text-primary);
+  background:  var(--c-bg);
+  margin:      0;
+  padding:     0;
+  -webkit-font-smoothing:  antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

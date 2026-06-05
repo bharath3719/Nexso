@@ -1,0 +1,202 @@
+/* VendorLayout.css — styles for the Vendor portal shell */
+
+/* ── Header extras ──────────────────────────────────────────────────────────── */
+
+.vendor-header-name {
+  display: flex;
+  align-items: center;
+  padding-left: 16px;
+  border-left: 1px solid rgba(255,255,255,0.25);
+  margin-left: 12px;
+}
+
+.vendor-role-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(245,158,11,0.35);
+  border: 1px solid rgba(245,158,11,0.6);
+  border-radius: 4px;
+  padding: 2px 8px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* ── Notification bell ───────────────────────────────────────────────────────── */
+
+.vendor-notif-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 120ms;
+  color: #fff;
+}
+.vendor-notif-btn:hover { background: rgba(255,255,255,0.12); }
+
+.vendor-notif-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* ── Page wrapper ────────────────────────────────────────────────────────────── */
+
+.vnd-page { display: flex; flex-direction: column; gap: 20px; }
+
+/* ── Stat cards ──────────────────────────────────────────────────────────────── */
+
+.vnd-stat-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px 24px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  transition: box-shadow 150ms ease;
+}
+.vnd-stat-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+.vnd-stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.vnd-stat-body { flex: 1; min-width: 0; }
+.vnd-stat-value { font-size: 28px; font-weight: 700; line-height: 1; color: #1e293b; }
+.vnd-stat-label { font-size: 13px; color: #64748b; margin-top: 4px; }
+
+/* ── Section cards ───────────────────────────────────────────────────────────── */
+
+.vnd-card {
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+.vnd-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+/* ── Ticket detail panel ─────────────────────────────────────────────────────── */
+
+.vnd-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+}
+.vnd-panel {
+  width: min(480px, 100vw);
+  height: 100%;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 32px rgba(0,0,0,0.14);
+  animation: panel-slide-in 200ms ease;
+}
+@keyframes panel-slide-in {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+.vnd-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  flex-shrink: 0;
+}
+.vnd-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.vnd-panel-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #f1f5f9;
+  flex-shrink: 0;
+}
+
+.vnd-detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.vnd-detail-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.vnd-detail-value {
+  font-size: 14px;
+  color: #1e293b;
+  font-weight: 500;
+}
+
+.vnd-wa-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #16a34a;
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+}
+.vnd-wa-link:hover { text-decoration: underline; }
+
+/* ── Action buttons ──────────────────────────────────────────────────────────── */
+
+.vnd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity 150ms, box-shadow 150ms;
+}
+.vnd-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.vnd-btn--primary { background: #3b82f6; color: #fff; }
+.vnd-btn--primary:hover:not(:disabled) { box-shadow: 0 4px 12px rgba(59,130,246,0.4); }
+.vnd-btn--success { background: #16a34a; color: #fff; }
+.vnd-btn--success:hover:not(:disabled) { box-shadow: 0 4px 12px rgba(22,163,74,0.4); }
+.vnd-btn--ghost  { background: transparent; color: #64748b; border: 1px solid #e2e8f0; }
+.vnd-btn--ghost:hover:not(:disabled) { background: #f8fafc; }
