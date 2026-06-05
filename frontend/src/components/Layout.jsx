@@ -1,5 +1,5 @@
 import React from "react";
-import nexsoLogo from "../assets/nexso-logo.svg";
+import nexsoLogo from "../assets/logo.png";
 import { useShellState, ShellSidebar, SignOutButton } from "./LayoutShared.jsx";
 import { api } from "../services/api.js";
 import "../styles/Layout.css";

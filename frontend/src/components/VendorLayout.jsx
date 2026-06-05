@@ -1,6 +1,6 @@
 import React from "react";
 import { IconButton, Text } from "@fluentui/react";
-import nexsoLogo from "../assets/nexso-logo.svg";
+import nexsoLogo from "../assets/logo.png";
 import { api } from "../services/api.js";
 import { useShellState, ShellSidebar, SignOutButton } from "./LayoutShared.jsx";
 import "../styles/Layout.css";
