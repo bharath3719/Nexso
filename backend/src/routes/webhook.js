@@ -4,10 +4,50 @@ import { persistRawMessage, findMessageById } from "../services/messages.js";
 import { resolveIdentity } from "../services/identity.js";
 import { detectIntent } from "../services/intent.js";
 import { createTicketIfNeeded, updateTicketIfNeeded } from "../services/tickets.js";
-import { sendWhatsAppTemplate, sendWhatsAppText } from "../services/notifications.js";
+import { sendWhatsAppText, sendWhatsAppInteractiveList } from "../services/notifications.js";
 import { dbQuery } from "../db/index.js";
 
 const router = express.Router();
+
+// In-memory sessions: whatsapp_number → { category, categoryTitle, expiresAt }
+// Used to carry the category a user picked from the interactive list to their next message.
+const userSessions = new Map();
+
+function getSession(number) {
+  const s = userSessions.get(number);
+  if (!s || Date.now() > s.expiresAt) {
+    userSessions.delete(number);
+    return null;
+  }
+  return s;
+}
+
+function setSession(number, data) {
+  userSessions.set(number, { ...data, expiresAt: Date.now() + 30 * 60 * 1000 });
+}
+
+const ISSUE_SECTIONS = [
+  {
+    title: "Home Services",
+    rows: [
+      { id: "ELECTRICAL", title: "Electricians", description: "Electrical repairs & faults" },
+      { id: "PLUMBING", title: "Plumbers", description: "Water leaks & pipe issues" },
+      { id: "HOUSEKEEPING", title: "Housekeeping", description: "Cleaning & sanitation" },
+      { id: "PEST_CONTROL", title: "Pest Control", description: "Pests, insects & rodents" },
+      { id: "APPLIANCE", title: "Appliance Repair", description: "Broken appliances" },
+      { id: "AC", title: "AC Servicing", description: "Air conditioning repairs" },
+    ],
+  },
+  {
+    title: "Building Services",
+    rows: [
+      { id: "CCTV", title: "CCTV Technicians", description: "Camera & surveillance issues" },
+      { id: "LIFT", title: "Lift Maintenance", description: "Elevator issues" },
+      { id: "SECURITY", title: "Security Agencies", description: "Security & access issues" },
+      { id: "GENERATOR", title: "Generator Maintenance", description: "Power backup issues" },
+    ],
+  },
+];
 
 function safeParseJson(value) {
  if (!value) return null;
@@ -82,6 +122,7 @@ function extractWhatsAppMessage(body) {
 
  const interactive = message.type === "interactive" ? message.interactive : null;
  const form_fields = extractFlowFormFields(interactive);
+ const list_reply = interactive?.type === "list_reply" ? interactive.list_reply : null;
 
  return {
  message_id: message.id || null,
@@ -90,6 +131,7 @@ function extractWhatsAppMessage(body) {
  message_type: message.type || "other",
  text: message.text?.body,
  form_fields,
+ list_reply,
  raw_message_payload: message,
  };
 }
@@ -100,156 +142,16 @@ async function getRecentTicketsForUser(userId) {
  return r?.rows || [];
 }
 
-function formatTicketSummary(tickets) {
- if (!tickets?.length) return "No previous complaints found. Reply with your issue to raise a new complaint.";
- const lines = tickets.map((t) => `${t.id || t.ticket_id || "#"}: ${t.status || "OPEN"} - ${t.category || ""}`);
- return `Your recent complaints:\n${lines.join("\n")}`;
+async function getUserName(userId) {
+ if (!userId) return null;
+ const r = await dbQuery("SELECT name FROM users WHERE id = $1", [userId]);
+ return r?.rows?.[0]?.name || null;
 }
 
-async function getSession(whatsappNumber) {
- if (!whatsappNumber) return null;
- const r = await dbQuery("SELECT * FROM whatsapp_sessions WHERE whatsapp_number = $1", [whatsappNumber]);
- return r?.rows?.[0] || null;
+function isGreeting(text) {
+ return /^(hi+|hello|hey|hii+|howdy|good\s*(morning|evening|afternoon)|namaste|helo+|yo|sup)\s*[!.]*$/i.test((text || "").trim());
 }
 
-async function saveSession(whatsappNumber, state, context) {
- if (!whatsappNumber) return null;
- const r = await dbQuery(
- `INSERT INTO whatsapp_sessions (whatsapp_number, state, context, updated_at)
- VALUES ($1,$2,$3,NOW())
- ON CONFLICT (whatsapp_number) DO UPDATE SET state = EXCLUDED.state, context = EXCLUDED.context, updated_at = NOW()
- RETURNING *`,
- [whatsappNumber, state, context || {}],
- );
- return r?.rows?.[0] || null;
-}
-
-async function clearSession(whatsappNumber) {
- if (!whatsappNumber) return;
- await dbQuery("DELETE FROM whatsapp_sessions WHERE whatsapp_number = $1", [whatsappNumber]);
-}
-
-async function findSocietyByName(name) {
- if (!name) return null;
- const r = await dbQuery("SELECT * FROM societies WHERE LOWER(name) = LOWER($1) LIMIT 1", [name]);
- return r?.rows?.[0] || null;
-}
-
-async function findSocietyByCode(code) {
- if (!code) return null;
- const r = await dbQuery("SELECT * FROM societies WHERE LOWER(code) = LOWER($1) LIMIT 1", [code]);
- return r?.rows?.[0] || null;
-}
-
-async function findSocietyById(id) {
- if (!id) return null;
- const r = await dbQuery("SELECT * FROM societies WHERE id = $1 LIMIT 1", [id]);
- return r?.rows?.[0] || null;
-}
-
-async function findDefaultSociety() {
- const r = await dbQuery("SELECT * FROM societies ORDER BY id ASC LIMIT 1");
- return r?.rows?.[0] || null;
-}
-
-async function createSociety(name) {
- const r = await dbQuery("INSERT INTO societies (name) VALUES ($1) RETURNING *", [name]);
- return r?.rows?.[0] || null;
-}
-
-async function createUser({ whatsapp_number, society_id, apartment, name = null, role = "resident" }) {
- const r = await dbQuery("INSERT INTO users (whatsapp_number, name, role, society_id, apartment) VALUES ($1,$2,$3,$4,$5) RETURNING *", [whatsapp_number, name, role, society_id, apartment]);
- return r?.rows?.[0] || null;
-}
-
-async function upsertUserFromFlow(whatsappNumber, fields, identity) {
- if (!whatsappNumber) return identity;
-
- const societyCode = fields.society_code || fields.code || null;
- const apartment = fields.apartment || fields.flat || null;
- const name = fields.name || fields.full_name || null;
-
- let society = null;
- if (societyCode) {
- society = await findSocietyByCode(societyCode);
- }
-
- if (!society && identity?.society_id) {
- society = await findSocietyById(identity.society_id);
- }
-
- if (!society) {
- society = await findDefaultSociety();
- }
-
- if (!society) {
- society = await createSociety("Default Society");
- }
-
- if (!society) {
- return { error: "invalid_society_code" };
- }
-
- // If user exists, update missing fields
- const existing = await dbQuery("SELECT * FROM users WHERE whatsapp_number = $1 LIMIT 1", [whatsappNumber]);
- const user = existing?.rows?.[0];
- if (user) {
- const sets = [];
- const params = [];
- if (name) {
- params.push(name);
- sets.push(`name = $${params.length}`);
- }
- if (apartment) {
- params.push(apartment);
- sets.push(`apartment = $${params.length}`);
- }
- if (!user.society_id) {
- params.push(society.id);
- sets.push(`society_id = $${params.length}`);
- }
- if (sets.length) {
- params.push(user.id);
- await dbQuery(`UPDATE users SET ${sets.join(", ")}, updated_at = NOW() WHERE id = $${params.length}`, params);
- }
- return { role: user.role || "OWNER", user_id: user.id, society_id: user.society_id || society.id };
- }
-
- const created = await createUser({ whatsapp_number: whatsappNumber, name, apartment, society_id: society.id, role: "OWNER" });
- return { role: created?.role || "OWNER", user_id: created?.id, society_id: created?.society_id || society.id };
-}
-
-async function handleRegistrationFlow(whatsappNumber, text) {
- const msg = (text || "").trim();
- let session = await getSession(whatsappNumber);
-
- if (!session) {
- session = await saveSession(whatsappNumber, "awaiting_society", {});
- return "Welcome! Please share your society name to register.";
- }
-
- if (session.state === "awaiting_society") {
- if (!msg) return "Please share your society name to continue.";
- const ctx = { society_name: msg };
- await saveSession(whatsappNumber, "awaiting_apartment", ctx);
- return "Got it. Please share your apartment/flat number.";
- }
-
- if (session.state === "awaiting_apartment") {
- if (!msg) return "Please share your apartment/flat number.";
- const societyName = session.context?.society_name;
- let society = await findSocietyByName(societyName);
- if (!society) {
- society = await createSociety(societyName);
- }
- const user = await createUser({ whatsapp_number: whatsappNumber, society_id: society?.id, apartment: msg });
- await clearSession(whatsappNumber);
- return `Registered. Society: ${society?.name || societyName}. Apartment: ${msg}. Reply with your issue to raise a complaint.`;
- }
-
- await clearSession(whatsappNumber);
- return "Let's start again. Please share your society name.";
-}
 
 function normalizePayload(body) {
  const st = extractWhatsAppStatus(body);
@@ -304,9 +206,17 @@ router.post("/whatsapp", async (req, res) => {
  return res.status(200).json({ status: "ignored", reason: "no_message" });
  }
 
- // If this is a delivery/status callback, log and exit
+ // If this is a delivery/status callback, update outbound record and exit
  if (normalized.message_type === "status") {
  log("Webhook status callback", normalized);
+ if (normalized.message_id && normalized.status) {
+   await dbQuery(
+     `UPDATE whatsapp_outbound_messages
+      SET status = $1, status_updated_at = NOW()
+      WHERE message_id = $2`,
+     [normalized.status, normalized.message_id],
+   ).catch(() => {});
+ }
  return res.status(200).json({ status: "ok", delivery: normalized });
  }
 
@@ -325,60 +235,26 @@ router.post("/whatsapp", async (req, res) => {
  let identity = await resolveIdentity(normalized.sender_whatsapp_number);
  log("Webhook identity resolved", identity);
 
- // If configured, auto-respond with a template that launches the flow.
- // Restrict this to unregistered users so existing users can continue via text.
- const flowTemplateName = process.env.WHATSAPP_FLOW_TEMPLATE_NAME;
- const flowTemplateLang = process.env.WHATSAPP_FLOW_TEMPLATE_LANG || "en_US";
- const flowEnabled = process.env.WHATSAPP_FLOW_ENABLED !== "false"; // set to "false" to force plain text path
- if (flowEnabled && flowTemplateName && !identity?.user_id && normalized.message_type !== "interactive" && normalized.message_type !== "status") {
- sendWhatsAppTemplate(normalized.sender_whatsapp_number, flowTemplateName, flowTemplateLang).catch((e) => log("WhatsApp template send error", e?.message || e));
- return res.status(200).json({ status: "ok", saved, template_sent: flowTemplateName });
- }
 
- // Flow submission (interactive nfm reply) carries form fields; create/update user + ticket
- if (normalized.message_type === "interactive" && normalized.form_fields && Object.keys(normalized.form_fields).length) {
- const fields = normalized.form_fields;
- identity = await upsertUserFromFlow(normalized.sender_whatsapp_number, fields, identity);
-
- if (identity?.error === "missing_society_code") {
- sendWhatsAppText(normalized.sender_whatsapp_number, "Please provide the society code we shared to proceed.").catch((e) => log("WhatsApp text send error", e?.message || e));
- return res.status(200).json({ status: "error", reason: "missing_society_code" });
- }
-
- if (identity?.error === "invalid_society_code") {
- sendWhatsAppText(normalized.sender_whatsapp_number, "That society code is not valid. Please check the code and try again.").catch((e) => log("WhatsApp text send error", e?.message || e));
- return res.status(200).json({ status: "error", reason: "invalid_society_code" });
- }
-
- const flowMsg = {
- text: fields.issue || fields.problem || fields.description || normalized.text,
- raw_message_payload: { ...normalized.raw_message_payload, form_fields: fields },
- };
-
- const result = await createTicketIfNeeded(flowMsg, identity);
-
- if (normalized.sender_whatsapp_number) {
- let reply;
- if (result?.error) {
- reply = `Could not create ticket: ${result.reason || result.error}`;
- } else if (result?.deduplicated_ticket_id) {
- reply = `We already have a recent ticket ${result.deduplicated_ticket_id}. We will keep you posted.`;
- } else if (result?.ticket_id) {
- reply = `Ticket created: ${result.ticket_id}. Status: ${result.status || "OPEN"}.`;
- } else {
- reply = process.env.WHATSAPP_TEXT_REPLY || "Your request is recorded.";
- }
+ // Interactive list reply — user picked a category from the menu
+ if (normalized.message_type === "interactive" && normalized.list_reply) {
+ const { id: category, title: categoryTitle } = normalized.list_reply;
+ setSession(normalized.sender_whatsapp_number, { category, categoryTitle });
+ const reply = `You've selected *${categoryTitle}*.\n\nPlease describe the issue in a few words and we'll log a complaint right away.`;
  sendWhatsAppText(normalized.sender_whatsapp_number, reply).catch((e) => log("WhatsApp text send error", e?.message || e));
+ return res.status(200).json({ status: "ok", saved, identity, flow: "category_selected", category });
  }
 
- return res.status(200).json({ status: "ok", saved, identity, result, source: "flow" });
+ // Not the current occupant — unit has a tenant, owner cannot raise tickets
+ if (identity?.role === "NOT_OCCUPANT") {
+ sendWhatsAppText(normalized.sender_whatsapp_number, "Hi! This unit currently has a tenant. Complaints can only be raised by the current occupant. Please contact your society secretary if this is incorrect.").catch((e) => log("WhatsApp text send error", e?.message || e));
+ return res.status(200).json({ status: "ok", saved, identity, flow: "not_occupant" });
  }
 
- // Onboard flow for unknown users
+ // Unknown number — resident must be pre-registered by admin
  if (!identity?.user_id) {
- const reply = await handleRegistrationFlow(normalized.sender_whatsapp_number, normalized.text);
- if (reply) sendWhatsAppText(normalized.sender_whatsapp_number, reply).catch((e) => log("WhatsApp text send error", e?.message || e));
- return res.status(200).json({ status: "ok", saved, identity, flow: "registration" });
+ sendWhatsAppText(normalized.sender_whatsapp_number, "Hi! Your number isn't registered with our society management system. Please contact your society secretary to get added.").catch((e) => log("WhatsApp text send error", e?.message || e));
+ return res.status(200).json({ status: "ok", saved, identity, flow: "not_registered" });
  }
 
  // Detect intent
@@ -387,36 +263,43 @@ router.post("/whatsapp", async (req, res) => {
 
  let result = { intent };
 
- if (intent === "CREATE_TICKET") {
- result = await createTicketIfNeeded(normalized, identity);
-
- if (normalized.sender_whatsapp_number) {
- let reply;
- if (result?.error) {
- reply = `Could not create ticket: ${result.reason || result.error}`;
- } else if (result?.deduplicated_ticket_id) {
- reply = `We already have a recent ticket ${result.deduplicated_ticket_id}. We will keep you posted.`;
- } else if (result?.ticket_id) {
- reply = `Ticket created: ${result.ticket_id}. Status: ${result.status || "OPEN"}.`;
- } else {
- reply = process.env.WHATSAPP_TEXT_REPLY || "Your request is recorded.";
- }
-
- sendWhatsAppText(normalized.sender_whatsapp_number, reply).catch((e) => log("WhatsApp text send error", e?.message || e));
- }
- } else if (intent === "UPDATE_TICKET") {
+ if (intent === "UPDATE_TICKET") {
+ // Resident referenced a ticket ID — update its status
  result = await updateTicketIfNeeded(normalized, identity);
-
  if (normalized.sender_whatsapp_number) {
  const reply = result?.error ? `Could not update ticket: ${result.error}` : `Ticket ${result.ticket_id} updated to ${result.status}.`;
  sendWhatsAppText(normalized.sender_whatsapp_number, reply).catch((e) => log("WhatsApp text send error", e?.message || e));
  }
- } else {
- // OTHER intent: send open-ticket summary or menu
+ } else if (!isGreeting(normalized.text)) {
+ // Any description of a problem → raise a ticket, no keyword matching needed
+ const session = getSession(normalized.sender_whatsapp_number);
+ const msgForTicket = session ? { ...normalized, override_category: session.category } : normalized;
+ if (session) userSessions.delete(normalized.sender_whatsapp_number);
+ result = await createTicketIfNeeded(msgForTicket, identity);
  if (normalized.sender_whatsapp_number) {
- const tickets = await getRecentTicketsForUser(identity.user_id);
- const reply = formatTicketSummary(tickets);
+ let reply;
+ if (result?.error) {
+ reply = `Sorry, we couldn't log your complaint: ${result.reason || result.error}`;
+ } else if (result?.deduplicated_ticket_id) {
+ reply = `We already have an open ticket for this (${result.deduplicated_ticket_id}). We'll keep you posted.`;
+ } else if (result?.ticket_id) {
+ reply = `Got it! Your complaint has been logged (${result.ticket_id}). Our team will review it and assign someone shortly.`;
+ } else {
+ reply = process.env.WHATSAPP_TEXT_REPLY || "Your request has been recorded.";
+ }
  sendWhatsAppText(normalized.sender_whatsapp_number, reply).catch((e) => log("WhatsApp text send error", e?.message || e));
+ }
+ } else {
+ // Greeting → send interactive issue-category list
+ const name = identity?.name || (identity?.user_id ? await getUserName(identity.user_id) : null);
+ const headerText = name ? `Hi ${name}! How can we help?` : "Hi! How can we help?";
+ const recentTickets = await getRecentTicketsForUser(identity.user_id);
+ let bodyText = "Please select the type of issue you're facing:";
+ if (recentTickets.length) {
+ bodyText += `\n\nRecent complaints: ${recentTickets.map((t) => `${t.ticket_id} (${t.status})`).join(", ")}`;
+ }
+ if (normalized.sender_whatsapp_number) {
+ sendWhatsAppInteractiveList(normalized.sender_whatsapp_number, headerText, bodyText, ISSUE_SECTIONS, "Nexso Society Management").catch((e) => log("WhatsApp interactive list send error", e?.message || e));
  }
  }
 

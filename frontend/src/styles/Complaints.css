@@ -1,0 +1,83 @@
+/*
+ * Complaints.css
+ * ──────────────
+ * Styles for ComplaintsPage and its manage-complaint modal.
+ */
+
+/* ── Page root ───────────────────────────────────────────────────────────────── */
+/* min-width: 0 lets the Stack shrink as a flex child so the table scrolls properly */
+.cp-root {
+  min-width: 0;
+}
+
+/* Filter-toggle icon button */
+.cp-filter-btn {
+  height:  28px !important;
+  width:   28px !important;
+  color:   #3b82f6 !important;
+}
+
+/* ── Modal shell ─────────────────────────────────────────────────────────────── */
+.cp-modal-wrap {
+  min-width:  520px;
+  max-width:  720px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
+}
+
+/* ── Modal header (gradient bar) ─────────────────────────────────────────────── */
+.cp-modal-header {
+  padding:    16px 20px;
+  background: linear-gradient(120deg, #1e3a8a, #2563eb);
+  color:      #fff;
+}
+
+.cp-modal-header-title {
+  color: #fff !important;
+}
+
+.cp-modal-header-subtitle {
+  color: #e5edff !important;
+}
+
+/* ── Modal body ──────────────────────────────────────────────────────────────── */
+.cp-modal-body {
+  padding:    20px;
+  background: #f8fafc;
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+/* ── Info cards (category / status / description tiles) ──────────────────────── */
+.cp-info-card {
+  flex:          1;
+  min-width:     220px;
+  background:    #fff;
+  padding:       12px;
+  border-radius: 10px;
+  border:        1px solid #e5e7eb;
+}
+
+.cp-info-card--full {
+  width:         100%;
+  background:    #fff;
+  padding:       12px;
+  border-radius: 10px;
+  border:        1px solid #e5e7eb;
+}
+
+/* Overline label inside each card (e.g. "CATEGORY", "CURRENT STATUS") */
+.cp-card-label {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  /* font size / colour come from T.caption via the styles prop */
+}
+
+/* Status value shown in primary blue */
+.cp-card-status {
+  color: #3b82f6 !important;
+}
+
+/* ── Dropdowns ───────────────────────────────────────────────────────────────── */
+.cp-dropdown-col {
+  min-width: 240px;
+}

@@ -1,0 +1,808 @@
+/*
+ * SocietyDetail.css
+ * ─────────────────
+ * Component-scoped styles for SocietyDetailPage and its sub-components.
+ * All static layout, colour, typography, and interaction (hover/transition)
+ * rules live here. Only truly dynamic values (avatar hue, tower gradient
+ * colours, JS-animated heights) remain as inline styles in the JSX.
+ */
+
+/* ── Avatar ─────────────────────────────────────────────────────────────────── */
+.sd-avatar {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  flex-shrink: 0;
+  user-select: none;
+  /* width / height / background / color / border / font-size set inline (dynamic hue) */
+}
+
+/* ── Pill ────────────────────────────────────────────────────────────────────── */
+.sd-pill {
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+  /* background / color set inline (passed as props) */
+}
+
+/* ── Form inputs ─────────────────────────────────────────────────────────────── */
+.sd-input {
+  width: 100%;
+  padding: 8px 11px;
+  border-radius: 7px;
+  border: 1.5px solid var(--c-border, #e2e8f0);
+  font-size: 13px;
+  outline: none;
+  background: #fff;
+  box-sizing: border-box;
+  color: #1e293b;
+  transition: border-color 0.15s;
+}
+.sd-input:focus {
+  border-color: #3b82f6;
+}
+
+/* ── Field wrapper ───────────────────────────────────────────────────────────── */
+.sd-field {
+  flex: 1;
+  min-width: 140px;
+}
+.sd-field--wide {
+  flex: 2;
+  min-width: 160px;
+}
+.sd-field--spacer {
+  flex: 2;
+}
+.sd-field-label {
+  display: block;
+  color: #475569;
+  margin-bottom: 5px;
+}
+.sd-field-required {
+  color: #f43f5e;
+  margin-left: 2px;
+}
+
+/* ── AddResidentForm ─────────────────────────────────────────────────────────── */
+.sd-add-form {
+  background: linear-gradient(135deg, #eff6ff, #f0fdf4);
+  border: 2px solid rgba(59, 130, 246, 0.27);
+  border-left: 4px solid #3b82f6;
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-top: 8px;
+}
+.sd-add-form-title {
+  color: #3b82f6;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sd-form-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.sd-form-row--last {
+  margin-bottom: 14px;
+}
+.sd-form-error {
+  font-size: 12px;
+  color: #f43f5e;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  background: #fff1f2;
+  border-radius: 6px;
+  border: 1px solid #fecdd3;
+}
+.sd-form-actions {
+  display: flex;
+  gap: 8px;
+}
+.sd-btn-primary {
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 8px 18px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s;
+}
+.sd-btn-primary:disabled {
+  background: #93c5fd;
+  cursor: not-allowed;
+}
+.sd-btn-cancel {
+  background: #fff;
+  color: #64748b;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 8px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.sd-btn-cancel:hover {
+  border-color: #94a3b8;
+}
+
+/* ── ResidentCard ────────────────────────────────────────────────────────────── */
+.sd-resident-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #fff;
+  border-radius: 9px;
+  border: 1px solid #e2e8f0;
+  transition: box-shadow 0.18s;
+}
+.sd-resident-card:hover {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.09);
+}
+.sd-resident-name-col {
+  flex: 0 0 160px;
+  min-width: 0;
+}
+.sd-resident-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sd-resident-pills {
+  display: flex;
+  gap: 5px;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+.sd-resident-contact {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.sd-resident-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #64748b;
+}
+.sd-resident-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sd-resident-preferred {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #64748b;
+}
+.sd-resident-family {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.sd-resident-status {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sd-resident-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  /* background set inline (dynamic colour from meta) */
+}
+
+/* ── UnitBlock ───────────────────────────────────────────────────────────────── */
+.sd-unit-block {
+  margin-bottom: 14px;
+}
+.sd-unit-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.sd-unit-badge {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+.sd-unit-divider {
+  height: 1px;
+  flex: 1;
+  background: #e2e8f0;
+}
+.sd-unit-count {
+  font-size: 11px;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.sd-unit-add-btn {
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.sd-unit-add-btn--add {
+  background: #eff6ff;
+  color: #3b82f6;
+  border: 1px solid #bfdbfe;
+}
+.sd-unit-add-btn--add:hover {
+  background: #dbeafe;
+}
+.sd-unit-add-btn--cancel {
+  background: #fee2e2;
+  color: #f43f5e;
+  border: 1px solid #fecdd3;
+}
+.sd-unit-add-btn--cancel:hover {
+  background: #fecaca;
+}
+.sd-unit-vacant {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1.5px dashed #e2e8f0;
+  font-size: 12px;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sd-unit-vacant-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sd-unit-assign-btn {
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.15s;
+}
+.sd-unit-assign-btn:hover {
+  background: #2563eb;
+}
+.sd-unit-form-animate {
+  overflow: hidden;
+  /* max-height / opacity set inline (JS-driven animation) */
+  transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease;
+}
+
+/* ── FloorRow ────────────────────────────────────────────────────────────────── */
+.sd-floor-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  background: #fff;
+  transition: box-shadow 0.2s;
+}
+.sd-floor-row--open {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+.sd-floor-toggle {
+  width: 100%;
+  background: #f8fafc;
+  border: none;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: background 0.2s;
+  text-align: left;
+}
+.sd-floor-toggle:hover {
+  background: #f1f5f9;
+}
+.sd-floor-toggle--open {
+  background: linear-gradient(90deg, #eff6ff, #f8fafc);
+  border-bottom-color: #e2e8f0;
+}
+.sd-floor-toggle--open:hover {
+  background: linear-gradient(90deg, #eff6ff, #f8fafc);
+}
+.sd-floor-chevron-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  transition: background 0.25s;
+  flex-shrink: 0;
+}
+.sd-floor-chevron-wrap--open {
+  background: #3b82f6;
+}
+.sd-floor-number-box {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  transition: background 0.25s;
+  flex-shrink: 0;
+}
+.sd-floor-number-box--open {
+  background: #3b82f6;
+}
+.sd-floor-number {
+  font-size: 13px;
+  font-weight: 800;
+  color: #64748b;
+  transition: color 0.25s;
+}
+.sd-floor-number--open {
+  color: #fff;
+}
+.sd-floor-info {
+  flex: 1;
+}
+.sd-floor-resident-badge {
+  background: #e0e7ff;
+  color: #4338ca;
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: background 0.25s, color 0.25s;
+}
+.sd-floor-resident-badge--open {
+  background: #3b82f6;
+  color: #fff;
+}
+.sd-floor-content {
+  overflow: hidden;
+  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  /* height set inline by JS ref animation */
+}
+.sd-floor-inner {
+  padding: 16px 16px 8px;
+}
+.sd-floor-empty {
+  font-size: 13px;
+  color: #94a3b8;
+  text-align: center;
+  padding: 12px 0;
+}
+
+/* ── TowerCard ───────────────────────────────────────────────────────────────── */
+.sd-tower-card {
+  width: 270px;
+  min-height: 148px;
+  padding: 20px;
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  transition: transform 0.18s, box-shadow 0.18s;
+  /* background / border / box-shadow / border-top set inline (dynamic gradient per index + selected state) */
+}
+.sd-tower-card:hover {
+  transform: translateY(-6px);
+}
+.sd-tower-icon {
+  width: 62px;
+  height: 62px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 26px;
+  /* background set inline (selected state) */
+}
+.sd-tower-info {
+  flex: 1;
+  min-width: 0;
+}
+.sd-tower-name {
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sd-tower-actions {
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* ── StatTile ────────────────────────────────────────────────────────────────── */
+.sd-stat-tile {
+  flex: 1;
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px 18px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+.sd-stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  /* background set inline (colour + "18" tint) */
+}
+.sd-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.1;
+}
+
+/* ── Hero ────────────────────────────────────────────────────────────────────── */
+.sd-hero {
+  background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 50%, #2563eb 100%);
+  border-radius: 16px;
+  padding: 28px 32px;
+  box-shadow: 0 8px 32px rgba(30, 58, 95, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+.sd-hero-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.sd-hero-orb--1 {
+  top: -40px;
+  right: -40px;
+  width: 200px;
+  height: 200px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.sd-hero-orb--2 {
+  bottom: -60px;
+  right: 80px;
+  width: 240px;
+  height: 240px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.sd-hero-body {
+  position: relative;
+  z-index: 1;
+}
+.sd-hero-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.sd-hero-chips {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sd-hero-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.sd-hero-back-btn:hover {
+  background: rgba(255, 255, 255, 0.20);
+}
+.sd-hero-building-id {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-family: monospace;
+  font-weight: 800;
+  font-size: 13px;
+  color: #93c5fd;
+  letter-spacing: 2px;
+}
+.sd-hero-type-badge {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sd-hero-step-badge {
+  border-radius: 20px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* background / border / color set inline (step-dependent) */
+}
+.sd-hero-step-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Action button in hero chips row (e.g. Reset Secretary Password) */
+.sd-hero-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  height: 30px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.sd-hero-action-btn:hover {
+  background: rgba(255, 255, 255, 0.20);
+}
+.sd-hero-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sd-hero-name {
+  font-size: 32px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: -0.5px;
+  margin-bottom: 12px;
+  line-height: 1.1;
+}
+.sd-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+.sd-hero-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* ── Stats row ───────────────────────────────────────────────────────────────── */
+.sd-stats-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ── Towers wrapper ──────────────────────────────────────────────────────────── */
+.sd-towers-wrap {
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+.sd-towers-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sd-towers-cards {
+  padding: 20px 20px 16px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sd-towers-cards--bordered {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* ── Floors panel ────────────────────────────────────────────────────────────── */
+.sd-floors-panel {
+  padding: 20px 20px 12px;
+}
+.sd-floors-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.sd-floors-tower-icon {
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  /* background set inline (dynamic gradient) */
+}
+.sd-floors-empty {
+  font-size: 13px;
+  color: #94a3b8;
+  text-align: center;
+  padding: 20px 0;
+}
+
+/* ── Empty-towers placeholder ────────────────────────────────────────────────── */
+.sd-empty-towers {
+  background: #fff;
+  border-radius: 12px;
+  border: 2px dashed #e2e8f0;
+  padding: 40px 20px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 14px;
+}
+.sd-empty-towers-link {
+  display: block;
+  margin-top: 12px;
+  color: #3b82f6;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  text-decoration: underline;
+}
+
+/* ── Resident action buttons (edit / delete) ─────────────────────────────────── */
+.sd-resident-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.sd-resident-card:hover .sd-resident-actions {
+  opacity: 1;
+}
+.sd-resident-action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+  color: #94a3b8;
+}
+.sd-resident-action-btn--edit:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #3b82f6;
+}
+.sd-resident-action-btn--delete:hover {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #f43f5e;
+}
+
+/* ── Inline delete confirmation strip ───────────────────────────────────────── */
+.sd-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #475569;
+  margin-top: 4px;
+  animation: sd-fade-in 0.15s ease;
+}
+.sd-btn-danger {
+  background: #f43f5e;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 14px;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  margin-left: auto;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.sd-btn-danger:hover {
+  background: #e11d48;
+}
+.sd-btn-danger:disabled {
+  background: #fca5a5;
+  cursor: not-allowed;
+}
+
+/* ── Edit form variant ───────────────────────────────────────────────────────── */
+.sd-edit-form {
+  background: linear-gradient(135deg, #fff7ed, #fffbeb);
+  border-color: rgba(245, 158, 11, 0.27);
+  border-left-color: #f59e0b;
+  margin-top: 4px;
+  animation: sd-fade-in 0.15s ease;
+}
+.sd-edit-form .sd-add-form-title {
+  color: #d97706;
+}
+
+@keyframes sd-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

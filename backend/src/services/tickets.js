@@ -8,29 +8,45 @@ function nowIso() {
 }
 
 export async function createTicketIfNeeded(msg, identity) {
-  const { society_id, user_id } = identity || {};
+  const { society_id, user_id, resident_id, unit_id, whatsapp_number } = identity || {};
   const text = (msg?.text || msg?.raw_message_payload?.text?.body || msg?.raw_message_payload?.text || "").toLowerCase();
-  const category = inferCategory(text);
+  const category = msg?.override_category || inferCategory(text);
   const description = msg?.text || msg?.raw_message_payload?.text?.body || msg?.raw_message_payload?.text || "No description";
 
   // Permission: must belong to a society
-  if (!society_id || !user_id) {
+  if (!society_id || (!user_id && !resident_id && !whatsapp_number)) {
     return { error: "permission_denied", reason: "User not registered in a society" };
   }
 
   const dedupMinutes = Number(process.env.DEDUP_MINUTES ?? 30);
   const shouldDedup = Number.isFinite(dedupMinutes) && dedupMinutes > 0;
   if (shouldDedup) {
-    const dedup = await dbQuery(
-      `SELECT * FROM tickets
-       WHERE raised_by_user_id = $1
-         AND category = $2
-         AND created_at > NOW() - INTERVAL '${dedupMinutes} minutes'
-         AND status != 'CLOSED'
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [user_id, category],
-    );
+    let dedup = null;
+    if (user_id) {
+      dedup = await dbQuery(
+        `SELECT * FROM tickets
+         WHERE raised_by_user_id = $1
+           AND category = $2
+           AND created_at > NOW() - INTERVAL '${dedupMinutes} minutes'
+           AND status NOT IN ('CLOSED', 'RESOLVED')
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [user_id, category],
+      );
+    } else if (whatsapp_number) {
+      // For residents without users row, dedupe by recent whatsapp_messages from same number
+      dedup = await dbQuery(
+        `SELECT t.* FROM tickets t
+         JOIN whatsapp_messages wm ON wm.sender_whatsapp_number = $1
+         WHERE t.society_id = $2
+           AND t.category = $3
+           AND t.created_at > NOW() - INTERVAL '${dedupMinutes} minutes'
+           AND t.status NOT IN ('CLOSED', 'RESOLVED')
+         ORDER BY t.created_at DESC LIMIT 1`,
+        [whatsapp_number, society_id, category],
+      );
+    }
+
     if (dedup && dedup.rows && dedup.rows[0]) {
       return { deduplicated_ticket_id: dedup.rows[0].ticket_id };
     }
@@ -38,10 +54,10 @@ export async function createTicketIfNeeded(msg, identity) {
 
   const ticketId = `T-${Date.now()}`;
   const ins = await dbQuery(
-    `INSERT INTO tickets (ticket_id, society_id, raised_by_user_id, category, description, media_urls, priority, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO tickets (ticket_id, society_id, raised_by_user_id, unit_id, category, description, media_urls, priority, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
-    [ticketId, society_id, user_id, category, description, [], "NORMAL", TicketStatus.OPEN],
+    [ticketId, society_id, user_id || null, unit_id || null, category, description, [], "NORMAL", TicketStatus.OPEN],
   );
   const ticket = ins && ins.rows ? ins.rows[0] : { ticket_id: ticketId, status: TicketStatus.OPEN };
   const autoAssign = String(process.env.AUTO_ASSIGN ?? "true").toLowerCase() === "true";

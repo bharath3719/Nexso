@@ -1,13 +1,27 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import morgan from "morgan";
-import { isDbConnected } from "./db/index.js";
+import path from "path";
+import { fileURLToPath } from "url";
 
-import webhookRouter from "./routes/webhook.js";
-import vendorRouter from "./routes/vendor.js";
-import ticketsRouter from "./routes/tickets.js";
-import usersRouter from "./routes/users.js";
-import societiesRouter from "./routes/societies.js";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { isDbConnected } from "./db/index.js";
+import { startMaintenanceScheduler } from "./services/maintenanceScheduler.js";
+import { startTicketEscalationScheduler } from "./services/ticketEscalationScheduler.js";
+
+import webhookRouter    from "./routes/webhook.js";
+import vendorRouter     from "./routes/vendor.js";
+import ticketsRouter    from "./routes/tickets.js";
+import usersRouter      from "./routes/users.js";
+import societiesRouter  from "./routes/societies.js";
+import onboardingRouter from "./routes/onboarding.js";
+import authRouter       from "./routes/auth.js";
+import secretaryRouter     from "./routes/secretary.js";
+import vendorPortalRouter  from "./routes/vendor-portal.js";
+import maintenanceRouter      from "./routes/maintenance.js";
+import razorpayWebhookRouter from "./routes/razorpayWebhook.js";
 
 const app = express();
 
@@ -37,6 +51,29 @@ if (process.env.TRUST_PROXY === "true") {
   app.set("trust proxy", 1);
 }
 
+app.use(helmet({
+  // Allow inline scripts/styles that Vite dev server and Fluent UI use in production builds
+  contentSecurityPolicy: false,
+}));
+
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,                   // 20 login attempts per window per IP
+  standardHeaders: true,
+  legacyHeaders:  false,
+  message: { error: "too_many_requests" },
+});
+
+const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100,            // Meta sends batched messages; 100/min is generous
+  standardHeaders: true,
+  legacyHeaders:  false,
+  message: { error: "too_many_requests" },
+});
+
 app.use(
   cors(
     corsOrigins.size
@@ -63,6 +100,9 @@ app.use(
 );
 app.use(morgan("dev"));
 
+// Serve generated maintenance bill PDFs
+app.use("/bills", express.static(path.join(__dirname, "..", "bills")));
+
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
@@ -71,10 +111,26 @@ app.get("/health", (req, res) => {
   });
 });
 
-app.use("/webhook", webhookRouter);
-app.use("/api/vendors", vendorRouter);
-app.use("/api/tickets", ticketsRouter);
-app.use("/api/users", usersRouter);
-app.use("/api/societies", societiesRouter);
+// More-specific webhook mounts must come before the general /webhook catch-all
+app.use("/webhook/razorpay",  razorpayWebhookRouter);
+app.use("/webhook",           webhookLimiter, webhookRouter);
+
+app.use("/api/auth",         authLimiter, authRouter);
+app.use("/api/secretary",    secretaryRouter);
+app.use("/api/vendor-portal", vendorPortalRouter);
+app.use("/api/vendors",      vendorRouter);
+app.use("/api/tickets",      ticketsRouter);
+app.use("/api/users",        usersRouter);
+app.use("/api/societies",    societiesRouter);
+app.use("/api/onboarding",   onboardingRouter);
+app.use("/api/maintenance",  maintenanceRouter);
+
+// ── Background scheduler ──────────────────────────────────────────────────────
+// Only start in production / when the DB is (or will be) available.
+// Skipped during test runs where NODE_ENV=test.
+if (process.env.NODE_ENV !== "test") {
+  startMaintenanceScheduler();
+  startTicketEscalationScheduler();
+}
 
 export default app;

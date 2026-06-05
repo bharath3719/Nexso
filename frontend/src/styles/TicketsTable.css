@@ -1,0 +1,30 @@
+/*
+ * TicketsTable.css
+ * ────────────────
+ * Component styles for TicketsTable.
+ */
+
+/* Outer wrapper — must be min-width: 0 so it shrinks as a flex child
+   and the scroll container inside can get a bounded width.            */
+.tt-root {
+  min-width: 0;
+}
+
+/* Horizontal scroll wrapper around DetailsList.
+   overflowY: visible keeps Fluent callouts / tooltips from clipping.  */
+.tt-scroll-container {
+  overflow-x: auto;
+  overflow-y: visible;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Empty-state message */
+.tt-empty-label {
+  color: #697586;
+}
+
+/* Pagination "Page X of Y" label */
+.tt-pagination-label {
+  color: #5f6a7a;
+}

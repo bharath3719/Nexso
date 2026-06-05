@@ -1,0 +1,300 @@
+/*
+ * Vendor.css — Shared styles for the vendor feature
+ * ───────────────────────────────────────────────────
+ * Covers: StatusBadge (helperFunctions), VendorDetail, Vendors, VendorDocuments.
+ * Dynamic colours (bg / color from VENDOR_STATUS_META) remain inline.
+ */
+
+/* ── StatusBadge ─────────────────────────────────────────────────────────────── */
+.vendor-status-badge {
+  display:        inline-block;
+  padding:        4px 14px;
+  border-radius:  14px;
+  font-size:      12px;
+  font-weight:    600;
+  letter-spacing: 0.2px;
+  white-space:    nowrap;
+  /* background / color set inline (from VENDOR_STATUS_META) */
+}
+
+/* ── VendorDetail v2 ──────────────────────────────────────────────────────────── */
+
+/* Root flex column — fills the modal */
+.vd2-root {
+  display:        flex;
+  flex-direction: column;
+  background:     #fff;
+}
+
+/* ── Header strip ── */
+.vd2-header {
+  display:       flex;
+  align-items:   center;
+  gap:           14px;
+  padding:       20px 24px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink:   0;
+}
+
+.vd2-avatar {
+  width:           48px;
+  height:          48px;
+  border-radius:   50%;
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  color:           #fff;
+  font-size:       18px;
+  font-weight:     700;
+  letter-spacing:  -0.5px;
+  flex-shrink:     0;
+}
+
+.vd2-header-info {
+  flex:     1;
+  min-width: 0;
+}
+
+.vd2-header-name {
+  font-size:     20px;
+  font-weight:   700;
+  color:         #1e293b;
+  line-height:   1.25;
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+}
+
+.vd2-header-sub {
+  font-size:  13px;
+  color:      #64748b;
+  margin-top: 2px;
+}
+
+.vd2-header-actions {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+  flex-shrink: 0;
+}
+
+/* ── Scrollable tab content ── */
+.vd2-tab-body {
+  padding:    24px;
+  overflow-y: auto;
+  max-height: 58vh;
+  min-height: 40vh;
+}
+
+/* ── Section label (overline style) ── */
+.vd2-section-label {
+  font-size:      11px;
+  font-weight:    700;
+  color:          #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom:  12px;
+}
+
+/* ── Two-column field grid ── */
+.vd2-field-grid {
+  display:               grid;
+  grid-template-columns: 1fr 1fr;
+  gap:                   14px 28px;
+}
+
+.vd2-field {
+  display:        flex;
+  flex-direction: column;
+  gap:            3px;
+}
+
+.vd2-field-label {
+  font-size:      11px;
+  font-weight:    600;
+  color:          #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.vd2-field-value {
+  font-size:   14px;
+  color:       #1e293b;
+  line-height: 1.45;
+}
+
+.vd2-field-empty {
+  color:      #cbd5e1;
+  font-style: italic;
+  font-size:  14px;
+}
+
+/* ── Horizontal rule between sections ── */
+.vd2-divider {
+  height:     1px;
+  background: #f1f5f9;
+  margin:     20px 0;
+}
+
+/* ── Category chips ── */
+.vd2-chips {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       6px;
+  margin-top: 4px;
+}
+
+.vd2-chip {
+  display:       inline-flex;
+  align-items:   center;
+  padding:       4px 12px;
+  border-radius: 999px;
+  background:    #eff6ff;
+  color:         #1d4ed8;
+  font-size:     12px;
+  font-weight:   600;
+  border:        1px solid #bfdbfe;
+}
+
+/* ── Inline yes/no badges (Emergency, Active) ── */
+.vd2-badge {
+  display:       inline-flex;
+  align-items:   center;
+  padding:       2px 10px;
+  border-radius: 999px;
+  font-size:     12px;
+  font-weight:   600;
+}
+
+.vd2-badge--yes { background: #d1fae5; color: #065f46; }
+.vd2-badge--no  { background: #f1f5f9; color: #64748b; }
+
+/* ── View mode toolbar (Edit button row) ── */
+.vd2-view-toolbar {
+  display:         flex;
+  justify-content: flex-end;
+  margin-bottom:   16px;
+}
+
+/* ── Edit form ── */
+.vd2-edit-form {
+  display:        flex;
+  flex-direction: column;
+  gap:            14px;
+}
+
+.vd2-form-row {
+  display:               grid;
+  grid-template-columns: 1fr 1fr;
+  gap:                   16px;
+}
+
+.vd2-form-divider {
+  height:     1px;
+  background: #f1f5f9;
+  margin:     4px 0;
+}
+
+.vd2-checkboxes {
+  display: flex;
+  gap:     28px;
+}
+
+/* ── Sticky save/cancel footer ── */
+.vd2-footer {
+  display:         flex;
+  justify-content: flex-end;
+  gap:             8px;
+  padding:         14px 24px;
+  border-top:      1px solid #e2e8f0;
+  background:      #fff;
+  flex-shrink:     0;
+}
+
+/* ── Verification tab ── */
+.vd2-status-card {
+  background:    #f8fafc;
+  border:        1px solid #e2e8f0;
+  border-radius: 8px;
+  padding:       16px;
+}
+
+.vd2-status-reason {
+  margin-top:  14px;
+  padding-top: 14px;
+  border-top:  1px solid #e2e8f0;
+}
+
+.vd2-verif-actions {
+  display:         flex;
+  justify-content: flex-end;
+  gap:             8px;
+  margin-top:      18px;
+}
+
+/* ── VendorDocuments ──────────────────────────────────────────────────────────── */
+/* Lives inside vd2-tab-body which already provides padding — no extra card chrome. */
+.vdocs-wrapper {
+  /* intentionally bare — the tab body wraps it */
+}
+
+/* ── Vendors page ────────────────────────────────────────────────────────────── */
+.vendors-table-wrap {
+  background:    #fff;
+  border-radius: 12px;
+  border:        1px solid #e2e8f0;
+  overflow:      hidden;
+}
+
+.vendors-empty {
+  padding:       60px;
+  background:    #fff;
+  border-radius: 12px;
+  border:        1px solid #e2e8f0;
+}
+
+.vendors-view-btn {
+  border-radius: 6px !important;
+  height:        30px !important;
+  min-width:     60px !important;
+  font-size:     13px !important;
+}
+
+/* Filter panel */
+.vendors-filter-panel {
+  background:    #f8fafc;
+  border:        1px solid #e2e8f0;
+  border-radius: 10px;
+  padding:       16px 20px;
+}
+
+/* Blue dot on filter icon when filters are active */
+.vendors-filter-dot {
+  position:      absolute;
+  top:           3px;
+  right:         3px;
+  width:         7px;
+  height:        7px;
+  border-radius: 50%;
+  background:    #0078d4;
+  pointer-events: none;
+}
+
+/* Emergency badge in table */
+.vendors-emergency-badge {
+  display:       inline-block;
+  padding:       3px 8px;
+  border-radius: 10px;
+  background:    #fef3c7;
+  color:         #92400e;
+  font-size:     12px;
+  font-weight:   600;
+}
+
+/* AddVendorModal content wrapper */
+.avm-body {
+  padding:    28px;
+  min-width:  560px;
+  max-height: 82vh;
+  overflow-y: auto;
+}

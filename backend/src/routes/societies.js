@@ -1,7 +1,9 @@
 import express from "express";
 import { dbQuery } from "../db/index.js";
+import { requireAdmin } from "../middleware/auth.js";
 
 const router = express.Router();
+router.use(requireAdmin);
 
 // GET /api/societies?limit=100&offset=0
 router.get("/", async (req, res) => {
