@@ -23,6 +23,9 @@ pids/
 coverage/
 .nyc_output/
 
+# Generated files
+bills/
+
 # Editor/OS files
 .DS_Store
 .vscode/
