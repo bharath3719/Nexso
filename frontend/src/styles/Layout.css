@@ -46,9 +46,10 @@
 }
 
 .layout-logo-img {
-  height: 36px;
+  height: 28px;
   width: auto;
   display: block;
+  padding: 2px 4px;
 }
 
 /* ── Body (sidebar + content) ────────────────────────────────────────────────── */
