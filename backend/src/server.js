@@ -22,6 +22,7 @@ import secretaryRouter     from "./routes/secretary.js";
 import vendorPortalRouter  from "./routes/vendor-portal.js";
 import maintenanceRouter      from "./routes/maintenance.js";
 import razorpayWebhookRouter from "./routes/razorpayWebhook.js";
+import residentRouter        from "./routes/resident.js";
 
 const app = express();
 
@@ -124,6 +125,7 @@ app.use("/api/users",        usersRouter);
 app.use("/api/societies",    societiesRouter);
 app.use("/api/onboarding",   onboardingRouter);
 app.use("/api/maintenance",  maintenanceRouter);
+app.use("/api/resident",     residentRouter);
 
 // ── Background scheduler ──────────────────────────────────────────────────────
 // Only start in production / when the DB is (or will be) available.

@@ -1,34 +1,25 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Icon } from "@fluentui/react";
+import "../styles/DashboardShared.css";
 
 export function PortalStatCard({ icon, iconBg, value, label, onClick }) {
   return (
     <div
-      style={{
-        background: "#fff", borderRadius: 10, padding: "20px 24px",
-        border: "1px solid #e2e8f0", display: "flex", alignItems: "center",
-        gap: 16, transition: "box-shadow 150ms ease",
-        cursor: onClick ? "pointer" : "default",
-      }}
+      className={`portalStatCard${onClick ? " portalStatCard--clickable" : ""}`}
       onClick={onClick}
-      onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = ""; }}
     >
-      <div style={{
-        width: 44, height: 44, borderRadius: 10, background: iconBg,
-        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-      }}>
-        <Icon iconName={icon} style={{ color: "#fff", fontSize: 20 }} />
+      <div className="portalStatCard__iconWrap" style={{ background: iconBg }}>
+        <Icon iconName={icon} />
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: "#1e293b" }}>{value ?? "—"}</div>
-        <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{label}</div>
+      <div className="portalStatCard__body">
+        <div className="portalStatCard__value">{value ?? "—"}</div>
+        <div className="portalStatCard__label">{label}</div>
       </div>
     </div>
   );
 }
 
-export function useDashboardData(fetchStats, fetchTickets, { pollMs = 0 } = {}) {
+export function useDashboardData(fetchStats, fetchTickets, { pollMs = 0, limit = 8 } = {}) {
   const [stats,   setStats]   = useState(null);
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +39,7 @@ export function useDashboardData(fetchStats, fetchTickets, { pollMs = 0 } = {}) 
       try {
         const [statsData, ticketsData] = await Promise.all([
           fetchStatsRef.current(),
-          fetchTicketsRef.current({ limit: 8 }),
+          fetchTicketsRef.current({ limit }),
         ]);
         if (!cancelled) {
           setStats(statsData);
@@ -67,7 +58,7 @@ export function useDashboardData(fetchStats, fetchTickets, { pollMs = 0 } = {}) 
       cancelled = true;
       if (interval) clearInterval(interval);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pollMs, limit]);
 
   return { stats, tickets, loading, error };
 }

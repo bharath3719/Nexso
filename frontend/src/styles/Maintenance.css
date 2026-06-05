@@ -690,6 +690,109 @@
   }
 }
 
+/* Icon inside stat card */
+.maint-stat-icon i {
+  color: #fff;
+  font-size: 18px;
+}
+
+/* Error banner */
+.maint-error-banner {
+  color: #dc2626;
+  background: #fef2f2;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+}
+
+/* Filter row (MonthInput / StatusFilterSelect wrappers) */
+.maint-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.maint-filter-label {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Status filter <select> — same shape as maint-month-input */
+.maint-filter-select {
+  height: 32px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: #1e293b;
+  background: #fff;
+  outline: none;
+  transition: border-color 150ms;
+}
+.maint-filter-select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+/* Config bar inner layout */
+.maint-config-bar__inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.maint-config-bar__subtitle {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+/* Spinner wrapper inside DuesTable */
+.maint-spinner-wrap {
+  padding: 40px;
+  text-align: center;
+}
+
+/* Due row cell content */
+.maint-due-row-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.maint-due-row-phone {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+.maint-due-row-meta {
+  font-size: 13px;
+  color: #475569;
+}
+
+.maint-due-row-amount {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.maint-due-row-paid-on {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 3px;
+}
+
+.maint-due-row-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 /* Toast feedback */
 .maint-toast {
   position: fixed;

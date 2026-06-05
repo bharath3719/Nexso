@@ -190,8 +190,8 @@ export function MaintenancePage() {
   // ── Update a due ───────────────────────────────────────────────────────────
 
   const handleUpdate = useCallback(
-    (id, payload) => updateDue({ updateFn: api.maintenance.updateDue, id, payload, dues, setDues, setStats, showToast }),
-    [dues, showToast],
+    (id, payload) => updateDue({ updateFn: api.maintenance.updateDue, id, payload, setDues, setStats, showToast }),
+    [showToast],
   );
 
   // ── Render ─────────────────────────────────────────────────────────────────

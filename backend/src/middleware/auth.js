@@ -27,11 +27,14 @@ export function requireAuth(req, res, next) {
   try {
     const payload = jwt.verify(token, JWT_SECRET());
     req.user = {
-      id:        payload.sub,
-      username:  payload.username,
-      role:      payload.role,        // 'NEXSO_ADMIN' | 'SOCIETY_ADMIN' | 'VENDOR'
-      societyId: payload.societyId,   // null for NEXSO_ADMIN and VENDOR
-      vendorId:  payload.vendorId || null, // set only for VENDOR
+      id:         payload.sub,
+      username:   payload.username,
+      role:       payload.role,        // 'NEXSO_ADMIN' | 'SOCIETY_ADMIN' | 'VENDOR' | 'RESIDENT'
+      societyId:  payload.societyId,   // null for NEXSO_ADMIN and VENDOR
+      vendorId:   payload.vendorId    || null,
+      residentId: payload.residentId  || null,
+      unitId:     payload.unitId      || null,
+      unitNumber: payload.unitNumber  || null,
     };
     next();
   } catch {
@@ -66,6 +69,18 @@ export function requireVendor(req, res, next) {
     }
     if (!req.user.vendorId) {
       return res.status(403).json({ error: "vendor_id_missing" });
+    }
+    next();
+  });
+}
+
+export function requireResident(req, res, next) {
+  requireAuth(req, res, () => {
+    if (req.user.role !== "RESIDENT") {
+      return res.status(403).json({ error: "resident_required" });
+    }
+    if (!req.user.residentId || !req.user.unitId) {
+      return res.status(403).json({ error: "resident_mapping_missing" });
     }
     next();
   });

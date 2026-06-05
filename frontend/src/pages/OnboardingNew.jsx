@@ -1210,7 +1210,7 @@ const SUCCESS_STATS = [
   { icon: "CityNext", label: "Towers"          },
 ];
 
-function SuccessScreen({ society, totalUnits, totalResidents, navigate, onResetCreds, resetCredsLoading }) {
+function SuccessScreen({ society, totalUnits, totalResidents, navigate, secretaryCreds, onResetCreds, resetCredsLoading }) {
   const statValues = [totalUnits, totalResidents, society?.num_towers || 1];
 
   return (
@@ -1253,29 +1253,31 @@ function SuccessScreen({ society, totalUnits, totalResidents, navigate, onResetC
         ))}
       </Stack>
 
-      {/* Secretary password — regenerate button always visible */}
+      {/* Secretary credentials — show step-1 password directly; reset available if needed */}
       <div style={{
         background: "#fffbeb", border: "1px solid #fde68a",
         borderRadius: 10, padding: "14px 18px", maxWidth: 420, width: "100%",
-        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
       }}>
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 13, color: "#92400e", marginBottom: 3 }}>
-            🔑  Secretary Login
-          </div>
+        <div style={{ fontWeight: 600, fontSize: 13, color: "#92400e", marginBottom: 8 }}>
+          🔑  Secretary Login
+        </div>
+        {secretaryCreds ? (
+          <CredentialsBox username={secretaryCreds.username} password={secretaryCreds.tempPassword} />
+        ) : (
           <div style={{ fontSize: 12, color: "#78350f" }}>
             Username: <strong style={{ fontFamily: "monospace" }}>{society?.building_id}</strong>
             <br />
-            Password was shown when this society was created.
+            Password was set during society creation. Use "Reset Password" to generate a new one.
           </div>
+        )}
+        <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+          <DefaultButton
+            text={resetCredsLoading ? "Generating…" : "Reset Password"}
+            iconProps={{ iconName: "Permissions" }}
+            disabled={resetCredsLoading}
+            onClick={onResetCreds}
+          />
         </div>
-        <DefaultButton
-          text={resetCredsLoading ? "Generating…" : "Reset Password"}
-          iconProps={{ iconName: "Permissions" }}
-          disabled={resetCredsLoading}
-          onClick={onResetCreds}
-          styles={{ root: { whiteSpace: "nowrap", flexShrink: 0 } }}
-        />
       </div>
 
       <PrimaryButton text="Go to Onboarding" iconProps={{ iconName: "Back" }}

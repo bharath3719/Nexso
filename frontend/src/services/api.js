@@ -142,6 +142,14 @@ export const api = {
 
     /** Fetch current user profile. */
     me: () => get('/api/auth/me'),
+
+    /** Request a WhatsApp OTP for resident login. */
+    otpRequest: (phone) =>
+      post('/api/auth/otp/request', { phone }, { auth: false }),
+
+    /** Verify OTP and get resident JWT. */
+    otpVerify: (phone, otp) =>
+      post('/api/auth/otp/verify', { phone, otp }, { auth: false }),
   },
 
   // ── Vendors ───────────────────────────────────────────────────────────────
@@ -287,6 +295,28 @@ export const api = {
     sendReminders: (societyId, month)     => post('/api/maintenance/send-reminders', { societyId, month }),
     getSociety:    (societyId)            => get(`/api/maintenance/society/${societyId}`),
     patchSociety:  (societyId, data)      => patch(`/api/maintenance/society/${societyId}`, data),
+  },
+
+  // ── Secretary announcements ───────────────────────────────────────────────
+  announcements: {
+    list:   ()           => get('/api/secretary/announcements'),
+    create: (data)       => post('/api/secretary/announcements', data),
+    update: (id, data)   => patch(`/api/secretary/announcements/${id}`, data),
+    delete: (id)         => del(`/api/secretary/announcements/${id}`),
+  },
+
+  // ── Resident portal ───────────────────────────────────────────────────────
+  resident: {
+    announcements: () => get('/api/resident/announcements'),
+
+    visitorPasses: {
+      list:   (params = {}) => {
+        const qs = new URLSearchParams(params).toString();
+        return get(`/api/resident/visitor-passes${qs ? `?${qs}` : ''}`);
+      },
+      create: (data) => post('/api/resident/visitor-passes', data),
+      revoke: (id)   => patch(`/api/resident/visitor-passes/${id}/revoke`, {}),
+    },
   },
 
   // ── Vendor portal ─────────────────────────────────────────────────────────

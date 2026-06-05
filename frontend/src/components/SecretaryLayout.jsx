@@ -6,11 +6,12 @@ import "../styles/Layout.css";
 import "../styles/SecretaryLayout.css";
 
 const secretaryNavLinks = [
-  { name: "Dashboard",    key: "sec-dashboard",    path: "/secretary",              iconProps: { iconName: "Home"        } },
-  { name: "Residents",    key: "sec-residents",    path: "/secretary/residents",    iconProps: { iconName: "Group"       } },
-  { name: "Tickets",      key: "sec-tickets",      path: "/secretary/tickets",      iconProps: { iconName: "Ticket"      } },
-  { name: "Maintenance",  key: "sec-maintenance",  path: "/secretary/maintenance",  iconProps: { iconName: "PaymentCard" } },
-  { name: "My Profile",   key: "sec-profile",      path: "/secretary/profile",      iconProps: { iconName: "Contact"     } },
+  { name: "Dashboard",      key: "sec-dashboard",    path: "/secretary",                  iconProps: { iconName: "Home"        } },
+  { name: "Residents",      key: "sec-residents",    path: "/secretary/residents",        iconProps: { iconName: "Group"       } },
+  { name: "Tickets",        key: "sec-tickets",      path: "/secretary/tickets",          iconProps: { iconName: "Ticket"      } },
+  { name: "Announcements",  key: "sec-announce",     path: "/secretary/announcements",    iconProps: { iconName: "Megaphone"   } },
+  { name: "Maintenance",    key: "sec-maintenance",  path: "/secretary/maintenance",      iconProps: { iconName: "PaymentCard" } },
+  { name: "My Profile",     key: "sec-profile",      path: "/secretary/profile",          iconProps: { iconName: "Contact"     } },
 ];
 
 export function SecretaryLayout({ children, societyName, onLogout }) {

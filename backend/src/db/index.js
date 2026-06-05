@@ -212,16 +212,18 @@ export async function ensureSchema() {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_auth_accounts_society  ON auth_accounts (society_id)`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_auth_accounts_vendor   ON auth_accounts (vendor_id)`);
 
-    // Ensure portal_role CHECK includes VENDOR — drop and re-create idempotently
+    // Ensure portal_role CHECK includes VENDOR + RESIDENT — drop and re-create idempotently
     await db.query(`
       DO $$
       BEGIN
         ALTER TABLE auth_accounts DROP CONSTRAINT IF EXISTS auth_accounts_portal_role_check;
         ALTER TABLE auth_accounts
           ADD CONSTRAINT auth_accounts_portal_role_check
-          CHECK (portal_role IN ('NEXSO_ADMIN','SOCIETY_ADMIN','VENDOR'));
+          CHECK (portal_role IN ('NEXSO_ADMIN','SOCIETY_ADMIN','VENDOR','RESIDENT'));
       END$$;
     `);
+    await db.query(`ALTER TABLE auth_accounts ADD COLUMN IF NOT EXISTS resident_id INTEGER REFERENCES residents(id) ON DELETE CASCADE`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_auth_accounts_resident ON auth_accounts (resident_id)`);
 
     // ── Vendors — verification columns (added after initial create) ───────────
     await db.query(`ALTER TABLE vendors ADD COLUMN IF NOT EXISTS business_name TEXT`);
@@ -331,6 +333,54 @@ export async function ensureSchema() {
     // One OWNER and one TENANT per unit
     await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_residents_unit_owner  ON residents(unit_id) WHERE resident_type = 'OWNER'  AND unit_id IS NOT NULL`);
     await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_residents_unit_tenant ON residents(unit_id) WHERE resident_type = 'TENANT' AND unit_id IS NOT NULL`);
+
+    // ── OTP tokens (resident WhatsApp login) ──────────────────────────────────
+    await db.query(`CREATE TABLE IF NOT EXISTS otp_tokens (
+      id         SERIAL PRIMARY KEY,
+      phone      TEXT NOT NULL,
+      otp_code   TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used       BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_otp_tokens_phone ON otp_tokens (phone)`);
+
+    // ── Announcements (secretary → residents) ─────────────────────────────────
+    await db.query(`CREATE TABLE IF NOT EXISTS announcements (
+      id         SERIAL PRIMARY KEY,
+      society_id INTEGER NOT NULL REFERENCES societies(id) ON DELETE CASCADE,
+      title      TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      category   TEXT DEFAULT 'GENERAL',
+      priority   TEXT DEFAULT 'NORMAL' CHECK (priority IN ('NORMAL','URGENT')),
+      pinned     BOOLEAN DEFAULT FALSE,
+      created_by INTEGER REFERENCES auth_accounts(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_announcements_society ON announcements (society_id)`);
+
+    // ── Visitor passes (resident → gate) ─────────────────────────────────────
+    await db.query(`CREATE TABLE IF NOT EXISTS visitor_passes (
+      id            SERIAL PRIMARY KEY,
+      unit_id       INTEGER NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+      society_id    INTEGER NOT NULL REFERENCES societies(id) ON DELETE CASCADE,
+      resident_id   INTEGER REFERENCES residents(id) ON DELETE SET NULL,
+      visitor_name  TEXT NOT NULL,
+      visitor_phone TEXT,
+      purpose       TEXT,
+      valid_from    TIMESTAMPTZ NOT NULL,
+      valid_until   TIMESTAMPTZ NOT NULL,
+      vehicle       TEXT,
+      pass_code     TEXT UNIQUE NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'ACTIVE'
+                      CHECK (status IN ('ACTIVE','USED','EXPIRED','REVOKED')),
+      created_at    TIMESTAMPTZ DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_visitor_passes_unit     ON visitor_passes (unit_id)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_visitor_passes_society  ON visitor_passes (society_id)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_visitor_passes_passcode ON visitor_passes (pass_code)`);
 
     await db.query("COMMIT");
     connected = true;

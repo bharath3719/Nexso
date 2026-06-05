@@ -1050,4 +1050,103 @@ router.patch("/maintenance/config", async (req, res) => {
   }
 });
 
+// ── Announcements ─────────────────────────────────────────────────────────────
+
+// POST /api/secretary/announcements
+router.post("/announcements", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+    const { title, body, category = "GENERAL", priority = "NORMAL", pinned = false } = req.body || {};
+
+    if (!title?.trim() || !body?.trim()) {
+      return res.status(400).json({ error: "title_and_body_required" });
+    }
+    if (!["NORMAL", "URGENT"].includes(priority)) {
+      return res.status(400).json({ error: "invalid_priority" });
+    }
+
+    const result = await dbQuery(
+      `INSERT INTO announcements (society_id, title, body, category, priority, pinned, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [societyId, title.trim(), body.trim(), category || "GENERAL", priority, !!pinned, req.user.id],
+    );
+
+    return res.status(201).json({ announcement: result.rows[0] });
+  } catch (err) {
+    console.error("Create announcement error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// GET /api/secretary/announcements
+router.get("/announcements", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+
+    const result = await dbQuery(
+      `SELECT a.*,
+              aa.username AS created_by_username
+       FROM announcements a
+       LEFT JOIN auth_accounts aa ON aa.id = a.created_by
+       WHERE a.society_id = $1
+       ORDER BY a.pinned DESC, a.created_at DESC`,
+      [societyId],
+    );
+
+    return res.json({ announcements: result?.rows || [] });
+  } catch (err) {
+    console.error("List announcements error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// PATCH /api/secretary/announcements/:id
+router.patch("/announcements/:id", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+    const { id }    = req.params;
+    const { title, body, category, priority, pinned } = req.body || {};
+
+    const result = await dbQuery(
+      `UPDATE announcements
+       SET title      = COALESCE($1, title),
+           body       = COALESCE($2, body),
+           category   = COALESCE($3, category),
+           priority   = COALESCE($4, priority),
+           pinned     = COALESCE($5, pinned),
+           updated_at = NOW()
+       WHERE id = $6 AND society_id = $7
+       RETURNING *`,
+      [title || null, body || null, category || null, priority || null,
+       pinned != null ? !!pinned : null, id, societyId],
+    );
+
+    if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
+    return res.json({ announcement: result.rows[0] });
+  } catch (err) {
+    console.error("Update announcement error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// DELETE /api/secretary/announcements/:id
+router.delete("/announcements/:id", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+    const { id }    = req.params;
+
+    const result = await dbQuery(
+      `DELETE FROM announcements WHERE id = $1 AND society_id = $2 RETURNING id`,
+      [id, societyId],
+    );
+
+    if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Delete announcement error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
 export default router;
