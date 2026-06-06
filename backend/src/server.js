@@ -135,4 +135,13 @@ if (process.env.NODE_ENV !== "test") {
   startTicketEscalationScheduler();
 }
 
+// ── Frontend static serving ───────────────────────────────────────────────────
+// Serve the Vite production build and fall back to index.html for all
+// client-side routes so hard-refreshes don't return 404.
+const frontendDist = path.join(__dirname, "..", "..", "frontend", "dist");
+app.use(express.static(frontendDist));
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(frontendDist, "index.html"));
+});
+
 export default app;
