@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { DefaultButton, Icon, PrimaryButton, Spinner, TextField, Toggle } from "@fluentui/react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ function StatCard({ icon, iconBg, value, label }) {
   return (
     <div className="maint-stat">
       <div className="maint-stat-icon" style={{ background: iconBg }}>
-        <Icon iconName={icon} style={{ color: "#fff", fontSize: 18 }} />
+        <Icon iconName={icon} />
       </div>
       <div className="maint-stat-body">
         <div className="maint-stat-value">{value ?? "—"}</div>
@@ -64,31 +64,41 @@ export function Toast({ msg }) {
 
 function PayLinkBtn({ url }) {
   const [copied, setCopied] = useState(false);
+  const timerRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
   const copy = () => {
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 2000);
     });
   };
+
   return (
     <div className="maint-pay-link-row">
       <a href={url} target="_blank" rel="noopener noreferrer" className="maint-btn-link" title="Open Razorpay payment link in new tab">
-        🔗 Pay Link
+        Pay Link
       </a>
       <button className={`maint-copy-btn${copied ? " copied" : ""}`} onClick={copy} title={copied ? "Copied!" : "Copy payment link"}>
-        {copied ? "✓" : "📋"}
+        {copied ? <Icon iconName="CheckMark" /> : <Icon iconName="Copy" />}
       </button>
     </div>
   );
 }
 
 function DueRow({ due, onUpdate }) {
-  const [ref,    setRef]    = useState(due.payment_reference || "");
-  const [saving, setSaving] = useState(false);
+  const [paymentRef, setPaymentRef] = useState(due.payment_reference || "");
+  const [saving,     setSaving]     = useState(false);
+
+  useEffect(() => {
+    setPaymentRef(due.payment_reference || "");
+  }, [due.id, due.payment_reference]);
 
   const markPaid = async () => {
     setSaving(true);
-    try { await onUpdate(due.id, { status: "PAID", payment_reference: ref || null }); }
+    try { await onUpdate(due.id, { status: "PAID", payment_reference: paymentRef || null }); }
     finally { setSaving(false); }
   };
   const waive = async () => {
@@ -107,22 +117,22 @@ function DueRow({ due, onUpdate }) {
 
   return (
     <tr>
-      <td style={{ padding: "10px 14px" }}>
-        <div style={{ fontWeight: 600, fontSize: 14, color: "#1e293b" }}>{due.resident_name}</div>
+      <td>
+        <div className="maint-due-row-name">{due.resident_name}</div>
         {due.resident_phone && (
-          <div style={{ fontSize: 12, color: "#64748b", marginTop: 1 }}>{due.resident_phone}</div>
+          <div className="maint-due-row-phone">{due.resident_phone}</div>
         )}
       </td>
-      <td style={{ padding: "10px 14px", fontSize: 13, color: "#475569" }}>
+      <td className="maint-due-row-meta">
         {due.tower_name ? `${due.tower_name} · ` : ""}{due.unit_number || "—"}
       </td>
-      <td style={{ padding: "10px 14px", fontSize: 14, fontWeight: 600, color: "#1e293b" }}>
+      <td className="maint-due-row-amount">
         ₹{fmtINR(due.amount)}
       </td>
-      <td style={{ padding: "10px 14px", fontSize: 13, color: "#475569" }}>
+      <td className="maint-due-row-meta">
         {fmtDate(due.due_date)}
       </td>
-      <td style={{ padding: "10px 14px" }}>
+      <td>
         <StatusBadge status={due.status} />
         {due.reminder_sent_at && (
           <div className="maint-reminder-sent" style={{ marginTop: 4 }}>
@@ -131,24 +141,24 @@ function DueRow({ due, onUpdate }) {
           </div>
         )}
         {due.status === "PAID" && due.payment_date && (
-          <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>
+          <div className="maint-due-row-paid-on">
             Paid {fmtDate(due.payment_date)}
             {due.payment_reference ? ` · ${due.payment_reference}` : ""}
           </div>
         )}
       </td>
-      <td style={{ padding: "10px 14px" }}>
+      <td>
         {isPending && due.payment_link && <PayLinkBtn url={due.payment_link} />}
         {isPending && (
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="maint-due-row-actions">
             <input
               className="maint-ref-input"
               placeholder="Ref / UTR (opt.)"
-              value={ref}
-              onChange={(e) => setRef(e.target.value)}
+              value={paymentRef}
+              onChange={(e) => setPaymentRef(e.target.value)}
             />
             <button className="maint-btn-paid" onClick={markPaid} disabled={saving}>
-              {saving ? "…" : "✓ Mark Paid"}
+              {saving ? "…" : "Mark Paid"}
             </button>
             <button className="maint-btn-waive" onClick={waive} disabled={saving}>
               Waive
@@ -157,7 +167,7 @@ function DueRow({ due, onUpdate }) {
         )}
         {isDone && (
           <button className="maint-btn-undo" onClick={undo} disabled={saving}>
-            {saving ? "…" : "↩ Undo"}
+            {saving ? "…" : "Undo"}
           </button>
         )}
       </td>
@@ -184,7 +194,7 @@ export function DuesTable({ loading, dues, emptyMsg, onUpdate }) {
   return (
     <div className="maint-card">
       {loading ? (
-        <div style={{ padding: 40, textAlign: "center" }}>
+        <div className="maint-spinner-wrap">
           <Spinner label="Loading maintenance data…" />
         </div>
       ) : dues.length === 0 ? (
@@ -224,17 +234,13 @@ export function useShowToast() {
 
 export function ErrorBanner({ error }) {
   if (!error) return null;
-  return (
-    <div style={{ color: "#dc2626", background: "#fef2f2", borderRadius: 8, padding: "12px 16px", fontSize: 14 }}>
-      {error}
-    </div>
-  );
+  return <div className="maint-error-banner">{error}</div>;
 }
 
 export function MonthInput({ value, onChange }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>Month:</span>
+    <div className="maint-filter-row">
+      <span className="maint-filter-label">Month:</span>
       <input type="month" className="maint-month-input" value={value} onChange={onChange} />
     </div>
   );
@@ -242,16 +248,9 @@ export function MonthInput({ value, onChange }) {
 
 export function StatusFilterSelect({ value, onChange }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>Filter:</span>
-      <select
-        value={value}
-        onChange={onChange}
-        style={{
-          height: 32, border: "1px solid #d0d7de", borderRadius: 6,
-          padding: "0 10px", fontSize: 13, color: "#1e293b", background: "#fff", outline: "none",
-        }}
-      >
+    <div className="maint-filter-row">
+      <span className="maint-filter-label">Filter:</span>
+      <select className="maint-filter-select" value={value} onChange={onChange}>
         <option value="ALL">All Statuses</option>
         <option value="PENDING">Pending</option>
         <option value="PAID">Paid</option>
@@ -284,12 +283,14 @@ export function GenerateDuesButtons({ generating, reminding, isOff, dues, onGene
   );
 }
 
-export async function updateDue({ updateFn, id, payload, dues, setDues, setStats, showToast }) {
+export async function updateDue({ updateFn, id, payload, setDues, setStats, showToast }) {
   try {
     const data = await updateFn(id, payload);
-    setDues((prev) => prev.map((d) => d.id === id ? { ...d, ...data.due } : d));
-    const updated = dues.map((d) => d.id === id ? { ...d, ...data.due } : d);
-    setStats(computeUpdatedStats(updated));
+    setDues((prev) => {
+      const next = prev.map((d) => d.id === id ? { ...d, ...data.due } : d);
+      setStats(computeUpdatedStats(next));
+      return next;
+    });
     showToast(payload.status === "PAID" ? "Marked as paid ✓" : payload.status === "WAIVED" ? "Waived." : "Updated.");
   } catch {
     showToast("Failed to update.");
@@ -299,10 +300,10 @@ export async function updateDue({ updateFn, id, payload, dues, setDues, setStats
 export function MaintenanceConfigBar({ enabled, isOff, offText, onText, savingCfg, upiEdit, onToggle, onUpiChange, onSaveUpi }) {
   return (
     <div className="maint-config-bar">
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1 }}>
+      <div className="maint-config-bar__inner">
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>Maintenance Collection</div>
-          <div style={{ fontSize: 12, color: "#64748b", marginTop: 1 }}>
+          <div className="maint-config-bar__label">Maintenance Collection</div>
+          <div className="maint-config-bar__subtitle">
             {isOff ? offText : onText}
           </div>
         </div>

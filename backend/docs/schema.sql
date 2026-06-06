@@ -280,3 +280,60 @@ CREATE TABLE IF NOT EXISTS maintenance_expense_sheets (
   updated_at     TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(society_id, month)
 );
+
+-- ── Resident portal additions ──────────────────────────────────────────────────
+
+-- OTP tokens for WhatsApp-based resident login
+CREATE TABLE IF NOT EXISTS otp_tokens (
+  id         SERIAL PRIMARY KEY,
+  phone      TEXT NOT NULL,
+  otp_code   TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used       BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_otp_tokens_phone ON otp_tokens (phone);
+
+-- Extend auth_accounts to support RESIDENT role
+ALTER TABLE auth_accounts DROP CONSTRAINT IF EXISTS auth_accounts_portal_role_check;
+ALTER TABLE auth_accounts ADD CONSTRAINT auth_accounts_portal_role_check
+  CHECK (portal_role IN ('NEXSO_ADMIN','SOCIETY_ADMIN','VENDOR','RESIDENT'));
+ALTER TABLE auth_accounts ADD COLUMN IF NOT EXISTS resident_id INTEGER REFERENCES residents(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_auth_accounts_resident ON auth_accounts (resident_id);
+
+-- Announcements published by secretaries
+CREATE TABLE IF NOT EXISTS announcements (
+  id         SERIAL PRIMARY KEY,
+  society_id INTEGER NOT NULL REFERENCES societies(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  category   TEXT DEFAULT 'GENERAL',
+  priority   TEXT DEFAULT 'NORMAL' CHECK (priority IN ('NORMAL','URGENT')),
+  pinned     BOOLEAN DEFAULT FALSE,
+  created_by INTEGER REFERENCES auth_accounts(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_announcements_society ON announcements (society_id);
+
+-- Visitor passes created by residents
+CREATE TABLE IF NOT EXISTS visitor_passes (
+  id            SERIAL PRIMARY KEY,
+  unit_id       INTEGER NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+  society_id    INTEGER NOT NULL REFERENCES societies(id) ON DELETE CASCADE,
+  resident_id   INTEGER REFERENCES residents(id) ON DELETE SET NULL,
+  visitor_name  TEXT NOT NULL,
+  visitor_phone TEXT,
+  purpose       TEXT,
+  valid_from    TIMESTAMPTZ NOT NULL,
+  valid_until   TIMESTAMPTZ NOT NULL,
+  vehicle       TEXT,
+  pass_code     TEXT UNIQUE NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'ACTIVE'
+                  CHECK (status IN ('ACTIVE','USED','EXPIRED','REVOKED')),
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_visitor_passes_unit     ON visitor_passes (unit_id);
+CREATE INDEX IF NOT EXISTS idx_visitor_passes_society  ON visitor_passes (society_id);
+CREATE INDEX IF NOT EXISTS idx_visitor_passes_passcode ON visitor_passes (pass_code);

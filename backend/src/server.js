@@ -22,6 +22,7 @@ import secretaryRouter     from "./routes/secretary.js";
 import vendorPortalRouter  from "./routes/vendor-portal.js";
 import maintenanceRouter      from "./routes/maintenance.js";
 import razorpayWebhookRouter from "./routes/razorpayWebhook.js";
+import residentRouter        from "./routes/resident.js";
 
 const app = express();
 
@@ -124,6 +125,7 @@ app.use("/api/users",        usersRouter);
 app.use("/api/societies",    societiesRouter);
 app.use("/api/onboarding",   onboardingRouter);
 app.use("/api/maintenance",  maintenanceRouter);
+app.use("/api/resident",     residentRouter);
 
 // ── Background scheduler ──────────────────────────────────────────────────────
 // Only start in production / when the DB is (or will be) available.
@@ -132,5 +134,14 @@ if (process.env.NODE_ENV !== "test") {
   startMaintenanceScheduler();
   startTicketEscalationScheduler();
 }
+
+// ── Frontend static serving ───────────────────────────────────────────────────
+// Serve the Vite production build and fall back to index.html for all
+// client-side routes so hard-refreshes don't return 404.
+const frontendDist = path.join(__dirname, "..", "..", "frontend", "dist");
+app.use(express.static(frontendDist));
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(frontendDist, "index.html"));
+});
 
 export default app;
