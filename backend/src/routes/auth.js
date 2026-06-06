@@ -149,12 +149,21 @@ router.get("/me", requireAuth, async (req, res) => {
 });
 
 // ── POST /api/auth/otp/request ────────────────────────────────────────────────
-// Normalise phone: strip leading + and spaces so "91XXXXXXXXXX" matches the DB.
+// Normalise phone: always store/query as 10-digit local number; send WhatsApp
+// as full international number (91XXXXXXXXXX) which the Cloud API requires.
+
+function normalizePhone(raw) {
+  const digits = (raw || "").trim().replace(/\s+/g, "").replace(/^\+/, "");
+  // Strip 91 country code prefix so DB always sees the 10-digit local number.
+  return digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits;
+}
+
+function toWhatsAppNumber(localPhone) {
+  return localPhone.length === 10 ? `91${localPhone}` : localPhone;
+}
 
 router.post("/otp/request", async (req, res) => {
-  const rawPhone = (req.body?.phone || "").trim().replace(/\s+/g, "");
-  // Accept +91XXXXXXXXXX or 91XXXXXXXXXX or 10-digit; normalise to digits only.
-  const phone = rawPhone.replace(/^\+/, "");
+  const phone = normalizePhone(req.body?.phone);
 
   if (!phone || phone.length < 10) {
     return res.status(400).json({ error: "phone_required" });
@@ -168,7 +177,7 @@ router.post("/otp/request", async (req, res) => {
        FROM residents r
        JOIN units     u ON u.id = r.unit_id
        JOIN societies s ON s.id = r.society_id
-       WHERE REPLACE(r.phone, ' ', '') = $1
+       WHERE REGEXP_REPLACE(REPLACE(r.phone, ' ', ''), '^\\+?91', '') = $1
          AND r.unit_id IS NOT NULL
        LIMIT 1`,
       [phone],
@@ -187,10 +196,12 @@ router.post("/otp/request", async (req, res) => {
       [phone, otpCode, expiresAt],
     );
 
-    const msgSent = await sendWhatsAppText(
-      phone,
+    await sendWhatsAppText(
+      toWhatsAppNumber(phone),
       `Your Nexso login OTP is *${otpCode}*. It expires in ${Math.round(OTP_TTL_SECONDS / 60)} minutes. Do not share it with anyone.`,
-    ).catch(() => ({ skipped: true }));
+    ).catch((err) => {
+      console.error("OTP WhatsApp send error:", err?.message || err);
+    });
 
     // In dev (no WA token) return OTP directly so frontend can test.
     const devMode = !process.env.WHATSAPP_TOKEN;
@@ -209,9 +220,8 @@ router.post("/otp/request", async (req, res) => {
 // ── POST /api/auth/otp/verify ─────────────────────────────────────────────────
 
 router.post("/otp/verify", async (req, res) => {
-  const rawPhone = (req.body?.phone || "").trim().replace(/\s+/g, "");
-  const phone    = rawPhone.replace(/^\+/, "");
-  const otp      = (req.body?.otp || "").trim();
+  const phone = normalizePhone(req.body?.phone);
+  const otp   = (req.body?.otp || "").trim();
 
   if (!phone || !otp) {
     return res.status(400).json({ error: "phone_and_otp_required" });
@@ -246,7 +256,7 @@ router.post("/otp/verify", async (req, res) => {
        FROM residents r
        JOIN units     u ON u.id = r.unit_id
        JOIN societies s ON s.id = r.society_id
-       WHERE REPLACE(r.phone, ' ', '') = $1
+       WHERE REGEXP_REPLACE(REPLACE(r.phone, ' ', ''), '^\\+?91', '') = $1
          AND r.unit_id IS NOT NULL
        LIMIT 1`,
       [phone],
