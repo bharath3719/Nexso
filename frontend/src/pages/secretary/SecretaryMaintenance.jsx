@@ -1,504 +1,119 @@
-/**
- * SecretaryMaintenance.jsx
- * ─────────────────────────
- * Two tabs:
- *  1. Dues Collection — existing monthly dues table, generate, reminders
- *  2. Expense Sheet  — itemised bill builder: secretary enters total society
- *     expenses which are divided equally among enabled residents.
- *     Includes a bill preview modal matching the standard invoice format.
- */
-
 import React, { useEffect, useState, useCallback } from "react";
-import { Spinner, Icon } from "@fluentui/react";
-import { PageHeader } from "../../components/PageHeader.jsx";
+import { DefaultButton, Spinner, Icon } from "@fluentui/react";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
 import { api } from "../../services/api.js";
 import {
-  currentMonth, fmtINR2, Toast, StatsGrid, DuesTable,
+  currentMonth, Toast, StatsGrid, DuesTable,
   useShowToast, ErrorBanner, MonthInput, StatusFilterSelect, MaintenanceConfigBar,
   GenerateDuesButtons, updateDue,
-} from "../../components/MaintenanceShared.jsx";
+} from "../../components/maintenance/MaintenanceShared.jsx";
+import { ExpenseSheetTab } from "../../components/maintenance/ExpenseSheetTab.jsx";
+import { AccountTallyTab } from "../../components/maintenance/AccountTallyTab.jsx";
+import { formatMonth } from "../../utils/formatDate.js";
 import "../../styles/SecretaryLayout.css";
 import "../../styles/Maintenance.css";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Close Month Modal ─────────────────────────────────────────────────────────
 
-const DEFAULT_FIXED_ITEMS = [
-  { particulars: "Sinking Fund",            total_amount: "" },
-  { particulars: "Structural Repair Fee",   total_amount: "" },
-  { particulars: "Insurance",               total_amount: "" },
-  { particulars: "Parking Fee",             total_amount: "" },
-  { particulars: "Security Fee",            total_amount: "" },
-  { particulars: "Housekeeping Fee",        total_amount: "" },
-  { particulars: "Society Management Fee",  total_amount: "" },
-  { particulars: "Lift Maintenance AMC",    total_amount: "" },
-];
-
-const DEFAULT_VARIABLE_ITEMS = [
-  { particulars: "Garbage Collection Fee",  total_amount: "" },
-  { particulars: "Electricity Bill",        total_amount: "" },
-  { particulars: "Generator Fuel",          total_amount: "" },
-  { particulars: "Water Tank Cleaning Fee", total_amount: "" },
-  { particulars: "Non-Occupancy Charges",   total_amount: "" },
-];
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function monthLabel(m) {
-  if (!m) return "";
-  return new Date(m + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" });
-}
-
-function perUnit(totalAmount, count) {
-  if (!count || !Number(totalAmount)) return 0;
-  return Number(totalAmount) / count;
-}
-
-function toApiItems(items) {
-  return items.map((i) => ({ particulars: i.particulars, total_amount: Number(i.total_amount) || 0 }));
-}
-
-function toFormItems(raw, defaults) {
-  return (raw?.length ? raw : defaults).map((i) => ({
-    particulars:  i.particulars,
-    total_amount: i.total_amount ? String(i.total_amount) : "",
-  }));
-}
-
-function buildSheetPayload(month, fixedItems, variableItems, interestRate) {
-  return {
-    month,
-    fixed_items:    toApiItems(fixedItems),
-    variable_items: toApiItems(variableItems),
-    interest_rate:  Number(interestRate) || 21,
-  };
-}
-
-// ── Bill Preview Modal ────────────────────────────────────────────────────────
-
-function BillPreviewModal({ month, residents, onClose }) {
-  const [residentId,    setResidentId]    = useState("");
-  const [previewData,   setPreviewData]   = useState(null);
-  const [previewLoad,   setPreviewLoad]   = useState(false);
-  const [previewError,  setPreviewError]  = useState("");
-
-  const loadPreview = async (rid) => {
-    if (!rid) return;
-    setPreviewLoad(true);
-    setPreviewError("");
-    setPreviewData(null);
-    try {
-      const data = await api.secretary.maintenance.getBillPreview(month, rid);
-      setPreviewData(data);
-    } catch {
-      setPreviewError("Failed to load bill preview.");
-    } finally {
-      setPreviewLoad(false);
-    }
-  };
-
-  const handleSelect = (e) => {
-    setResidentId(e.target.value);
-    loadPreview(e.target.value);
-  };
-
-  const ml = monthLabel(month);
+function CloseMonthModal({ month, stats, onClose, onConfirm, closing }) {
+  const [notes, setNotes] = useState("");
+  const ml = formatMonth(month);
 
   return (
     <div className="maint-modal-overlay" onClick={onClose}>
-      <div className="maint-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
+      <div className="maint-modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
         <div className="maint-modal-header">
           <div>
-            <div className="maint-modal-title">Maintenance Invoice Preview</div>
+            <div className="maint-modal-title">Close Month Accounts</div>
             <div className="maint-modal-subtitle">{ml}</div>
           </div>
           <button className="maint-modal-close" onClick={onClose}>✕</button>
         </div>
-
-        {/* Body */}
         <div className="maint-modal-body">
-          {/* Resident selector */}
-          <div style={{ marginBottom: 18 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 }}>
-              Select Resident
-            </label>
-            <select value={residentId} onChange={handleSelect} className="maint-sheet-select">
-              <option value="">— Choose a resident to preview their bill —</option>
-              {residents.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                  {r.tower_name ? ` · ${r.tower_name}` : ""} · {r.unit_number}
-                </option>
-              ))}
-            </select>
+          <div style={{ background: "#fef3c7", border: "1px solid #f59e0b", borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 13 }}>
+            <strong>What happens when you close:</strong>
+            <ul style={{ margin: "8px 0 0 16px", padding: 0, lineHeight: 1.8 }}>
+              <li>All <strong>{stats?.pending || 0} Pending</strong> dues will be marked <strong>Overdue</strong></li>
+              <li>The month will be <strong>locked</strong> — no more edits to dues</li>
+              <li>A closure summary PDF will be available for download</li>
+              <li>Arrears carry forward automatically to next month's bills</li>
+            </ul>
           </div>
-
-          {previewLoad && (
-            <div style={{ textAlign: "center", padding: 32, color: "#64748b" }}>
-              <Spinner label="Loading bill…" />
-            </div>
-          )}
-          {previewError && <div style={{ color: "#dc2626", fontSize: 13 }}>{previewError}</div>}
-
-          {previewData && !previewLoad && (
-            <div className="maint-invoice" id="maint-invoice-print">
-              {/* Invoice header */}
-              <div className="maint-invoice-header">
-                {previewData.society?.name && (
-                  <div className="maint-invoice-society">{previewData.society.name}</div>
-                )}
-                {previewData.society?.address && (
-                  <div className="maint-invoice-address">{previewData.society.address}</div>
-                )}
-                <div className="maint-invoice-title" style={{ marginTop: previewData.society?.name ? 10 : 0 }}>
-                  Unit Maintenance Invoice — {previewData.resident.unit_number}
-                </div>
-                <div className="maint-invoice-meta">
-                  {ml} &nbsp;·&nbsp; {previewData.resident.name}
-                </div>
+          {stats && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16, fontSize: 13 }}>
+              <div style={{ background: "#f0fdf4", padding: "8px 12px", borderRadius: 6 }}>
+                <div style={{ color: "#16a34a", fontWeight: 700 }}>₹{Number(stats.collectedAmount || 0).toLocaleString("en-IN")}</div>
+                <div style={{ color: "#64748b", fontSize: 11 }}>Collected ({stats.paid} dues)</div>
               </div>
-
-              {/* Fixed items */}
-              {previewData.fixed_items?.length > 0 && (
-                <div className="maint-invoice-section">
-                  <div className="maint-invoice-section-title">Fixed Maintenance Fees</div>
-                  <table className="maint-invoice-table">
-                    <thead>
-                      <tr>
-                        <th>Sl No</th><th>Particulars</th><th className="maint-inv-amt">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewData.fixed_items.map((item, i) => (
-                        <tr key={i}>
-                          <td>{i + 1}</td>
-                          <td>{item.particulars}</td>
-                          <td className="maint-inv-amt">₹ {fmtINR2(item.per_unit)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Variable items */}
-              {previewData.variable_items?.length > 0 && (
-                <div className="maint-invoice-section">
-                  <div className="maint-invoice-section-title">Variable Maintenance Fees</div>
-                  <table className="maint-invoice-table">
-                    <thead>
-                      <tr>
-                        <th>Sl No</th><th>Particulars</th><th className="maint-inv-amt">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewData.variable_items.map((item, i) => (
-                        <tr key={i}>
-                          <td>{i + 1}</td>
-                          <td>{item.particulars}</td>
-                          <td className="maint-inv-amt">₹ {fmtINR2(item.per_unit)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Totals */}
-              <div className="maint-invoice-totals">
-                {previewData.base_amount > 0 && (
-                  <div className="maint-invoice-row">
-                    <span>Basic Maintenance</span>
-                    <span>₹ {fmtINR2(previewData.base_amount)}</span>
-                  </div>
-                )}
-                {previewData.expense_share > 0 && (
-                  <div className="maint-invoice-row">
-                    <span>Expense Share ({previewData.unit_count} units)</span>
-                    <span>₹ {fmtINR2(previewData.expense_share)}</span>
-                  </div>
-                )}
-                <div className="maint-invoice-row maint-invoice-row--subtotal">
-                  <span>Subtotal</span>
-                  <span>₹ {fmtINR2(previewData.base_amount + previewData.expense_share)}</span>
-                </div>
-                <div className="maint-invoice-row">
-                  <span>Sub: Advance Paid</span>
-                  <span style={{ color: "#94a3b8" }}>₹ —</span>
-                </div>
-                <div className="maint-invoice-row">
-                  <span>Add: Previously Due</span>
-                  <span>₹ {fmtINR2(previewData.previously_due)}</span>
-                </div>
-                <div className="maint-invoice-row">
-                  <span>Add: Interest on Due @{previewData.interest_rate}%</span>
-                  <span>₹ {fmtINR2(previewData.interest_amount)}</span>
-                </div>
-                <div className="maint-invoice-row maint-invoice-row--total">
-                  <span>TOTAL</span>
-                  <span>₹ {fmtINR2(previewData.total)}</span>
-                </div>
+              <div style={{ background: "#fff7ed", padding: "8px 12px", borderRadius: 6 }}>
+                <div style={{ color: "#ea580c", fontWeight: 700 }}>₹{Number(stats.totalAmount - stats.collectedAmount).toLocaleString("en-IN")}</div>
+                <div style={{ color: "#64748b", fontSize: 11 }}>Pending / Overdue ({stats.pending + stats.overdue} dues)</div>
               </div>
             </div>
           )}
+          <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>
+            Notes (optional)
+          </label>
+          <textarea
+            className="maint-sheet-input"
+            style={{ width: "100%", minHeight: 64, resize: "vertical", fontFamily: "inherit" }}
+            placeholder="e.g. 'Water pump repair deferred to next month'"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
         </div>
-
-        {/* Footer */}
         <div className="maint-modal-footer">
-          <DefaultButton text="Close" onClick={onClose} styles={{ root: { height: 32 } }} />
-          {previewData && (
-            <PrimaryButton
-              iconProps={{ iconName: "Print" }}
-              text="Print"
-              onClick={() => window.print()}
-              styles={{ root: { height: 32 } }}
-            />
-          )}
+          <DefaultButton text="Cancel" onClick={onClose} styles={{ root: { height: 32 } }} />
+          <DefaultButton
+            text={closing ? "Closing…" : "Close Month"}
+            onClick={() => onConfirm(notes)}
+            disabled={closing}
+            styles={{ root: { height: 32, background: "#dc2626", borderColor: "#dc2626", color: "#fff" } }}
+          />
         </div>
       </div>
     </div>
   );
 }
 
-// ── Item list state helper ────────────────────────────────────────────────────
+// ── Reopen Month Modal ────────────────────────────────────────────────────────
 
-function useItemList(initialItems) {
-  const [items, setItems] = useState(initialItems);
-  const setItem    = (idx, field, val) => setItems((p) => p.map((it, i) => i === idx ? { ...it, [field]: val } : it));
-  const removeItem = (idx) => setItems((p) => p.filter((_, i) => i !== idx));
-  const addItem    = () => setItems((p) => [...p, { particulars: "", total_amount: "" }]);
-  return [items, setItems, setItem, removeItem, addItem];
-}
-
-// ── Expense Sheet Tab ─────────────────────────────────────────────────────────
-
-function ExpenseSheetTab({ month, showToast }) {
-  const [loading,      setLoading]      = useState(true);
-  const [saving,       setSaving]       = useState(false);
-  const [unitCount,    setUnitCount]    = useState(0);
-  const [interestRate, setInterestRate] = useState("21");
-  const [showPreview,  setShowPreview]  = useState(false);
-  const [residents,    setResidents]    = useState([]);
-
-  const [fixedItems,    setFixedItems,    setFixed,    removeFixed,    addFixed]    = useItemList(DEFAULT_FIXED_ITEMS);
-  const [variableItems, setVariableItems, setVariable, removeVariable, addVariable] = useItemList(DEFAULT_VARIABLE_ITEMS);
-
-  // Load expense sheet + residents when month changes
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [sheetData, resData] = await Promise.all([
-          api.secretary.maintenance.getExpenseSheet(month),
-          api.secretary.residents.list(),
-        ]);
-        if (cancelled) return;
-
-        setUnitCount(sheetData.count || 0);
-        setResidents((resData.residents || []).filter((r) => r.maintenance_enabled));
-
-        const s = sheetData.sheet;
-        if (s) {
-          setFixedItems(toFormItems(s.fixed_items, DEFAULT_FIXED_ITEMS));
-          setVariableItems(toFormItems(s.variable_items, DEFAULT_VARIABLE_ITEMS));
-          setInterestRate(String(s.interest_rate ?? 21));
-        }
-      } catch {
-        // silent — server may be down, form still usable
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [month]);
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await api.secretary.maintenance.saveExpenseSheet(buildSheetPayload(month, fixedItems, variableItems, interestRate));
-      showToast("Expense sheet saved — Generate Dues will use this breakdown.");
-    } catch {
-      showToast("Failed to save expense sheet.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Live summary calculations
-  const totalFixed    = fixedItems.reduce((s, i) => s + (Number(i.total_amount) || 0), 0);
-  const totalVariable = variableItems.reduce((s, i) => s + (Number(i.total_amount) || 0), 0);
-  const totalExpense  = totalFixed + totalVariable;
-  const perUnitExp    = unitCount > 0 ? totalExpense / unitCount : 0;
-
-  if (loading) {
-    return (
-      <div style={{ padding: 48, textAlign: "center" }}>
-        <Spinner label="Loading expense sheet…" />
-      </div>
-    );
-  }
+function ReopenMonthModal({ month, onClose, onConfirm, reopening }) {
+  const [reason, setReason] = useState("");
+  const ml = formatMonth(month);
 
   return (
-    <div className="maint-sheet">
-      {/* Info bar */}
-      <div className="maint-sheet-info">
-        <Icon iconName="Info" style={{ color: "#3b82f6", fontSize: 15, flexShrink: 0 }} />
-        <span>
-          <strong>{unitCount}</strong> resident{unitCount !== 1 ? "s" : ""} with maintenance enabled.{" "}
-          Enter total society expenses — each unit's share is calculated automatically.
-          {unitCount === 0 && " Enable maintenance for residents first."}
-        </span>
-      </div>
-
-      {/* Fixed items table */}
-      <ItemTable
-        title="Fixed Maintenance Fees"
-        items={fixedItems}
-        defaultCount={DEFAULT_FIXED_ITEMS.length}
-        unitCount={unitCount}
-        onChange={setFixed}
-        onRemove={removeFixed}
-        onAdd={addFixed}
-      />
-
-      {/* Variable items table */}
-      <ItemTable
-        title="Variable Maintenance Fees"
-        items={variableItems}
-        defaultCount={DEFAULT_VARIABLE_ITEMS.length}
-        unitCount={unitCount}
-        onChange={setVariable}
-        onRemove={removeVariable}
-        onAdd={addVariable}
-      />
-
-      {/* Interest rate */}
-      <div className="maint-sheet-interest">
-        <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Interest Rate on Arrears:</span>
-        <input
-          className="maint-sheet-input maint-sheet-input--sm"
-          type="number"
-          min="0"
-          max="100"
-          step="0.1"
-          value={interestRate}
-          onChange={(e) => setInterestRate(e.target.value)}
-        />
-        <span style={{ fontSize: 13, color: "#64748b" }}>% per annum</span>
-      </div>
-
-      {/* Summary */}
-      <div className="maint-sheet-summary">
-        <div className="maint-sheet-summary-row">
-          <span>Fixed fees per unit</span>
-          <span>₹ {fmtINR2(unitCount > 0 ? totalFixed / unitCount : 0)}</span>
+    <div className="maint-modal-overlay" onClick={onClose}>
+      <div className="maint-modal" style={{ maxWidth: 400 }} onClick={(e) => e.stopPropagation()}>
+        <div className="maint-modal-header">
+          <div className="maint-modal-title">Reopen {ml}</div>
+          <button className="maint-modal-close" onClick={onClose}>✕</button>
         </div>
-        <div className="maint-sheet-summary-row">
-          <span>Variable fees per unit</span>
-          <span>₹ {fmtINR2(unitCount > 0 ? totalVariable / unitCount : 0)}</span>
+        <div className="maint-modal-body">
+          <p style={{ fontSize: 13, color: "#374151", marginBottom: 12 }}>
+            Reopening will allow editing dues again. This action is logged for audit purposes.
+          </p>
+          <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>
+            Reason for reopening <span style={{ color: "#dc2626" }}>*</span>
+          </label>
+          <textarea
+            className="maint-sheet-input"
+            style={{ width: "100%", minHeight: 64, resize: "vertical", fontFamily: "inherit" }}
+            placeholder="e.g. 'Payment reference was entered incorrectly'"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
         </div>
-        <div className="maint-sheet-summary-row maint-sheet-summary-row--total">
-          <span>Total expense per unit</span>
-          <span>₹ {fmtINR2(perUnitExp)}</span>
-        </div>
-        <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
-          Each resident's bill = their base maintenance + ₹{fmtINR2(perUnitExp)} expense share
+        <div className="maint-modal-footer">
+          <DefaultButton text="Cancel" onClick={onClose} styles={{ root: { height: 32 } }} />
+          <DefaultButton
+            text={reopening ? "Reopening…" : "Reopen Month"}
+            onClick={() => onConfirm(reason)}
+            disabled={reopening || !reason.trim()}
+            styles={{ root: { height: 32 } }}
+          />
         </div>
       </div>
-
-      {/* Actions */}
-      <div className="maint-sheet-actions">
-        <DefaultButton
-          iconProps={{ iconName: "PreviewLink" }}
-          text="Preview Bill"
-          onClick={async () => {
-            try {
-              await api.secretary.maintenance.saveExpenseSheet(buildSheetPayload(month, fixedItems, variableItems, interestRate));
-            } catch { /* open preview anyway */ }
-            setShowPreview(true);
-          }}
-          disabled={unitCount === 0}
-          styles={{ root: { height: 36 } }}
-          title={unitCount === 0 ? "Enable maintenance for residents first" : "Preview the invoice for a specific resident"}
-        />
-        <PrimaryButton
-          iconProps={{ iconName: "Save" }}
-          text={saving ? "Saving…" : "Save Expense Sheet"}
-          onClick={save}
-          disabled={saving}
-          styles={{ root: { height: 36 } }}
-        />
-      </div>
-
-      {showPreview && (
-        <BillPreviewModal
-          month={month}
-          residents={residents}
-          onClose={() => setShowPreview(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-// ── Reusable item table ───────────────────────────────────────────────────────
-
-function ItemTable({ title, items, defaultCount, unitCount, onChange, onRemove, onAdd }) {
-  return (
-    <div className="maint-sheet-section">
-      <div className="maint-sheet-section-title">{title}</div>
-      <table className="maint-sheet-table">
-        <thead>
-          <tr>
-            <th style={{ width: 36 }}>#</th>
-            <th>Particulars</th>
-            <th style={{ width: 180 }}>Total Society Amount (₹)</th>
-            <th style={{ width: 130 }}>Per Unit (₹)</th>
-            <th style={{ width: 32 }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item, idx) => (
-            <tr key={idx}>
-              <td className="maint-sheet-sl">{idx + 1}</td>
-              <td>
-                <input
-                  className="maint-sheet-input maint-sheet-input--name"
-                  value={item.particulars}
-                  onChange={(e) => onChange(idx, "particulars", e.target.value)}
-                  placeholder="Item name"
-                />
-              </td>
-              <td>
-                <input
-                  className="maint-sheet-input maint-sheet-input--amount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={item.total_amount}
-                  onChange={(e) => onChange(idx, "total_amount", e.target.value)}
-                  placeholder="0.00"
-                />
-              </td>
-              <td className="maint-sheet-per-unit">
-                {unitCount > 0
-                  ? `₹ ${fmtINR2(perUnit(item.total_amount, unitCount))}`
-                  : <span style={{ color: "#cbd5e1" }}>—</span>}
-              </td>
-              <td>
-                {idx >= defaultCount && (
-                  <button className="maint-sheet-del" onClick={() => onRemove(idx)} title="Remove row">
-                    ✕
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <button className="maint-sheet-add-row" onClick={onAdd}>+ Add Item</button>
     </div>
   );
 }
@@ -519,9 +134,14 @@ export function SecretaryMaintenance() {
   const [generating,   setGenerating]   = useState(false);
   const [reminding,    setReminding]    = useState(false);
 
-  const [toast, showToast] = useShowToast();
+  const [closure,     setClosure]     = useState(null);
+  const [showClose,   setShowClose]   = useState(false);
+  const [showReopen,  setShowReopen]  = useState(false);
+  const [closing,     setClosing]     = useState(false);
+  const [reopening,   setReopening]   = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
-  // ── Load dues data ──────────────────────────────────────────────────────────
+  const [toast, showToast] = useShowToast();
 
   const load = useCallback(async (m = month, sf = statusFilter) => {
     setLoading(true);
@@ -529,9 +149,13 @@ export function SecretaryMaintenance() {
     try {
       const params = { month: m };
       if (sf !== "ALL") params.status = sf;
-      const data = await api.secretary.maintenance.list(params);
+      const [data, closureData] = await Promise.all([
+        api.secretary.maintenance.list(params),
+        api.secretary.maintenance.getClosure(m).catch(() => ({ status: "OPEN" })),
+      ]);
       setDues(data.dues   || []);
       setStats(data.stats || null);
+      setClosure(closureData);
       if (data.config) {
         setConfig(data.config);
         setUpiEdit(data.config.maintenance_upi_id || "");
@@ -545,17 +169,8 @@ export function SecretaryMaintenance() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleMonthChange = (e) => {
-    setMonth(e.target.value);
-    load(e.target.value, statusFilter);
-  };
-
-  const handleFilterChange = (e) => {
-    setStatusFilter(e.target.value);
-    load(month, e.target.value);
-  };
-
-  // ── Feature config ──────────────────────────────────────────────────────────
+  const handleMonthChange  = (e) => { setMonth(e.target.value);       load(e.target.value, statusFilter); };
+  const handleFilterChange = (e) => { setStatusFilter(e.target.value); load(month, e.target.value); };
 
   const toggleFeature = async (_, checked) => {
     setSavingCfg(true);
@@ -583,16 +198,13 @@ export function SecretaryMaintenance() {
     }
   };
 
-  // ── Generate dues ───────────────────────────────────────────────────────────
-
   const handleGenerate = async () => {
     setGenerating(true);
     try {
       const data = await api.secretary.maintenance.generate(month);
       showToast(
         `Generated ${data.created} dues for ${month}` +
-        (data.skipped ? ` (${data.skipped} already existed)` : "") +
-        (data.razorpay ? "" : ""),
+        (data.skipped ? ` (${data.skipped} already existed)` : ""),
       );
       await load(month, statusFilter);
     } catch {
@@ -601,8 +213,6 @@ export function SecretaryMaintenance() {
       setGenerating(false);
     }
   };
-
-  // ── Send reminders ──────────────────────────────────────────────────────────
 
   const handleRemind = async () => {
     setReminding(true);
@@ -621,27 +231,68 @@ export function SecretaryMaintenance() {
     }
   };
 
-  // ── Update a single due ─────────────────────────────────────────────────────
+  const handleCloseMonth = async (notes) => {
+    setClosing(true);
+    try {
+      const data = await api.secretary.maintenance.closeMonth(month, notes);
+      setClosure(data.closure);
+      setShowClose(false);
+      showToast(`${month} accounts closed successfully.`);
+      await load(month, statusFilter);
+    } catch (err) {
+      showToast(err?.data?.message || "Failed to close month.");
+    } finally {
+      setClosing(false);
+    }
+  };
+
+  const handleReopenMonth = async (reason) => {
+    setReopening(true);
+    try {
+      const data = await api.secretary.maintenance.reopenMonth(month, reason);
+      setClosure(data.closure);
+      setShowReopen(false);
+      showToast(`${month} reopened.`);
+    } catch {
+      showToast("Failed to reopen month.");
+    } finally {
+      setReopening(false);
+    }
+  };
+
+  const handleDownloadRegister = async () => {
+    setDownloading(true);
+    try {
+      await api.secretary.maintenance.downloadCollectionRegister(month);
+    } catch {
+      showToast("Failed to download collection register.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleDownloadInvoicePdf = useCallback(async (due) => {
+    try {
+      await api.secretary.maintenance.downloadInvoicePdf(due.id, `${due.unit_number || due.id}-${month}`);
+    } catch {
+      showToast("Failed to download invoice PDF.");
+    }
+  }, [month, showToast]);
 
   const handleUpdate = useCallback(
     (id, payload) => updateDue({ updateFn: api.secretary.maintenance.updateDue, id, payload, setDues, setStats, showToast }),
     [showToast],
   );
 
-  // ── Render ──────────────────────────────────────────────────────────────────
-
-  const isOff = !config.maintenance_enabled;
+  const isOff    = !config.maintenance_enabled;
+  const isClosed = closure?.status === "CLOSED";
 
   return (
     <div className="sec-page">
-      <PageHeader
-        title="Maintenance"
-        subtitle="Build monthly invoices, generate dues, and track collections"
-      />
+      <PageHeader title="Maintenance" subtitle="Build monthly invoices, generate dues, and track collections" />
 
       <ErrorBanner error={error} />
 
-      {/* ── Feature config bar ────────────────────────────────────────── */}
       <MaintenanceConfigBar
         enabled={config.maintenance_enabled}
         isOff={isOff}
@@ -654,62 +305,106 @@ export function SecretaryMaintenance() {
         onSaveUpi={saveUpi}
       />
 
-      {/* ── Tab bar ───────────────────────────────────────────────────── */}
       <div className="maint-tabs">
-        <button
-          className={`maint-tab${activeTab === "dues" ? " maint-tab--active" : ""}`}
-          onClick={() => setActiveTab("dues")}
-        >
-          <Icon iconName="PaymentCard" style={{ fontSize: 13, marginRight: 6 }} />
-          Dues Collection
-        </button>
-        <button
-          className={`maint-tab${activeTab === "expense-sheet" ? " maint-tab--active" : ""}`}
-          onClick={() => setActiveTab("expense-sheet")}
-        >
-          <Icon iconName="Documentation" style={{ fontSize: 13, marginRight: 6 }} />
-          Expense Sheet
-        </button>
+        {[
+          { key: "dues",          label: "Dues Collection", icon: "PaymentCard"   },
+          { key: "expense-sheet", label: "Expense Sheet",   icon: "Documentation" },
+          { key: "tally",         label: "Account Tally",   icon: "BarChart4"     },
+        ].map(({ key, label, icon }) => (
+          <button key={key} className={`maint-tab${activeTab === key ? " maint-tab--active" : ""}`} onClick={() => setActiveTab(key)}>
+            <Icon iconName={icon} style={{ fontSize: 13, marginRight: 6 }} />
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Month selector — shared between both tabs */}
-      <div className="maint-controls">
-        <MonthInput value={month} onChange={handleMonthChange} />
+      {activeTab !== "tally" && (
+        <div className="maint-controls">
+          <MonthInput value={month} onChange={handleMonthChange} />
 
-        {activeTab === "dues" && (
-          <>
-            <StatusFilterSelect value={statusFilter} onChange={handleFilterChange} />
-            <GenerateDuesButtons
-              generating={generating}
-              reminding={reminding}
-              isOff={isOff}
-              dues={dues}
-              onGenerate={handleGenerate}
-              onRemind={handleRemind}
-              generateTitle={isOff ? "Enable maintenance collection first" : "Create dues for all residents (includes expense sheet breakdown if saved)"}
-            />
-          </>
-        )}
-      </div>
+          {closure && (
+            <span className={`maint-closure-pill ${isClosed ? "maint-closure-pill--closed" : "maint-closure-pill--open"}`}>
+              <Icon iconName={isClosed ? "Lock" : "Unlock"} style={{ fontSize: 11, marginRight: 4 }} />
+              {isClosed ? "Closed" : "Open"}
+            </span>
+          )}
 
-      {/* ── Dues tab content ──────────────────────────────────────────── */}
+          {activeTab === "dues" && (
+            <>
+              <StatusFilterSelect value={statusFilter} onChange={handleFilterChange} />
+              <GenerateDuesButtons
+                generating={generating} reminding={reminding} isOff={isOff || isClosed} dues={dues}
+                onGenerate={handleGenerate} onRemind={handleRemind}
+                generateTitle={
+                  isClosed ? "Month is closed — reopen to generate more dues" :
+                  isOff    ? "Enable maintenance collection first" :
+                  "Create dues for all residents (includes expense sheet breakdown if saved)"
+                }
+              />
+              <DefaultButton
+                iconProps={{ iconName: "ExcelDocument" }}
+                text={downloading ? "Downloading…" : "Register PDF"}
+                onClick={handleDownloadRegister}
+                disabled={downloading || dues.length === 0}
+                title="Download collection register as PDF"
+                styles={{ root: { height: 32, fontSize: 12 } }}
+              />
+              {isClosed ? (
+                <DefaultButton iconProps={{ iconName: "Unlock" }} text="Reopen Month"
+                  onClick={() => setShowReopen(true)} styles={{ root: { height: 32, fontSize: 12 } }} />
+              ) : (
+                <DefaultButton iconProps={{ iconName: "Lock" }} text="Close Month"
+                  onClick={() => setShowClose(true)} disabled={dues.length === 0}
+                  title={dues.length === 0 ? "Generate dues before closing the month" : "Formally close the accounts for this month"}
+                  styles={{ root: { height: 32, fontSize: 12, borderColor: "#dc2626", color: "#dc2626" } }}
+                />
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {activeTab === "dues" && isClosed && (
+        <div className="maint-closed-banner">
+          <Icon iconName="Lock" style={{ fontSize: 14, marginRight: 8 }} />
+          Accounts for <strong>{formatMonth(month)}</strong> are closed. Dues cannot be edited.{" "}
+          <button className="maint-closed-banner__reopen" onClick={() => setShowReopen(true)}>
+            Reopen to make changes
+          </button>
+          {closure?.status === "CLOSED" && (
+            <button className="maint-closed-banner__pdf"
+              onClick={() => api.secretary.maintenance.downloadClosurePdf(month).catch(() => showToast("Failed to download."))}>
+              <Icon iconName="PDF" style={{ fontSize: 11, marginRight: 4 }} />
+              Download Closure PDF
+            </button>
+          )}
+        </div>
+      )}
+
       {activeTab === "dues" && (
         <>
           <StatsGrid stats={stats} />
           <DuesTable
-            loading={loading}
-            dues={dues}
+            loading={loading} dues={dues}
             emptyMsg={isOff
               ? "Maintenance collection is currently disabled."
               : `No dues for ${month}. Build an expense sheet, then click "Generate Dues".`}
             onUpdate={handleUpdate}
+            onDownloadPdf={handleDownloadInvoicePdf}
           />
         </>
       )}
 
-      {/* ── Expense Sheet tab content ─────────────────────────────────── */}
-      {activeTab === "expense-sheet" && (
-        <ExpenseSheetTab month={month} showToast={showToast} />
+      {activeTab === "expense-sheet" && <ExpenseSheetTab month={month} showToast={showToast} />}
+      {activeTab === "tally"         && <AccountTallyTab showToast={showToast} />}
+
+      {showClose && (
+        <CloseMonthModal month={month} stats={stats} onClose={() => setShowClose(false)}
+          onConfirm={handleCloseMonth} closing={closing} />
+      )}
+      {showReopen && (
+        <ReopenMonthModal month={month} onClose={() => setShowReopen(false)}
+          onConfirm={handleReopenMonth} reopening={reopening} />
       )}
 
       <Toast msg={toast} />

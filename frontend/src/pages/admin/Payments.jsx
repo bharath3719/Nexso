@@ -1,6 +1,6 @@
 import React from "react";
 import { Stack } from "@fluentui/react";
-import { PageHeader } from "../components/PageHeader.jsx";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
 
 export function PaymentsPage() {
   return (

@@ -53,7 +53,7 @@ class ApiError extends Error {
  * @returns {Promise<any>}            Parsed JSON response.
  * @throws  {ApiError}                On non-2xx responses or network failures.
  */
-async function request(method, path, { body, signal, auth = true } = {}) {
+async function request(method, path, { body, signal, auth = true, token: tokenOverride } = {}) {
   const headers = {};
 
   if (body !== undefined) {
@@ -61,7 +61,7 @@ async function request(method, path, { body, signal, auth = true } = {}) {
   }
 
   if (auth) {
-    const token = getToken();
+    const token = tokenOverride || getToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
   }
 
@@ -118,6 +118,34 @@ const post  = (path, body, opts = {})  => request('POST',   path, { ...opts, bod
 const put   = (path, body, opts = {})  => request('PUT',    path, { ...opts, body });
 const patch = (path, body, opts = {})  => request('PATCH',  path, { ...opts, body });
 const del   = (path, opts = {})        => request('DELETE', path, opts);
+
+// Downloads a binary file from the API (PDF, etc.) and triggers browser save.
+async function downloadFile(path, filename) {
+  const token = getToken();
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (res.status === 401) {
+    clearSession();
+    window.dispatchEvent(new CustomEvent('nexso:unauthorized'));
+    throw new ApiError('Unauthorized', 401, 'unauthorized');
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.message || `Download failed (${res.status})`, res.status, data.error, data);
+  }
+
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 // ─── Domain API ───────────────────────────────────────────────────────────────
 
@@ -209,6 +237,13 @@ export const api = {
     importResidents: (id, residents) =>
       post(`/api/onboarding/societies/${id}/residents`, { residents }),
 
+    /** Get guard account status for a society (no password returned). */
+    getGuardAccount: (id) => get(`/api/onboarding/societies/${id}/guard-account`),
+
+    /** Create or replace the guard portal account for a society. */
+    setGuardAccount: (id, data) =>
+      post(`/api/onboarding/societies/${id}/guard-account`, data),
+
     /** Generate a new temporary password for the society secretary. */
     resetSecretaryPassword: (id) =>
       post(`/api/onboarding/societies/${id}/reset-secretary-password`),
@@ -280,6 +315,42 @@ export const api = {
         const qs = new URLSearchParams({ month, residentId }).toString();
         return get(`/api/secretary/maintenance/bill-preview?${qs}`);
       },
+
+      /** Download a single due's bill as a PDF file */
+      downloadInvoicePdf: (dueId, invoiceLabel) =>
+        downloadFile(
+          `/api/secretary/maintenance/invoice/${dueId}/pdf`,
+          `invoice-${invoiceLabel || dueId}.pdf`,
+        ),
+
+      /** Download the full collection register for a month as a PDF */
+      downloadCollectionRegister: (month) =>
+        downloadFile(
+          `/api/secretary/maintenance/collection-register/pdf?month=${month}`,
+          `collection-register-${month}.pdf`,
+        ),
+
+      /** Get the closure record for a month */
+      getClosure: (month) => get(`/api/secretary/maintenance/closure/${month}`),
+
+      /** Formally close the books for a month */
+      closeMonth: (month, notes) => post('/api/secretary/maintenance/close-month', { month, notes }),
+
+      /** Reopen a closed month (requires a reason) */
+      reopenMonth: (month, reason) => post('/api/secretary/maintenance/reopen-month', { month, reason }),
+
+      /** Download the month closure summary PDF */
+      downloadClosurePdf: (month) =>
+        downloadFile(
+          `/api/secretary/maintenance/closure/${month}/pdf`,
+          `closure-${month}.pdf`,
+        ),
+
+      /** Monthly account tally — pass year='2026' to filter */
+      getTally: (year) => {
+        const qs = year ? `?year=${year}` : '';
+        return get(`/api/secretary/maintenance/tally${qs}`);
+      },
     },
   },
 
@@ -307,6 +378,9 @@ export const api = {
 
   // ── Resident portal ───────────────────────────────────────────────────────
   resident: {
+    profile:       ()     => get('/api/resident/profile'),
+    updateProfile: (data) => patch('/api/resident/profile', data),
+
     announcements: () => get('/api/resident/announcements'),
 
     visitorPasses: {
@@ -317,6 +391,43 @@ export const api = {
       create: (data) => post('/api/resident/visitor-passes', data),
       revoke: (id)   => patch(`/api/resident/visitor-passes/${id}/revoke`, {}),
     },
+
+    maintenance: {
+      /** List own dues. type = 'pending' | 'history' | omit for all */
+      dues: (type) => {
+        const qs = type ? `?type=${type}` : '';
+        return get(`/api/resident/maintenance/dues${qs}`);
+      },
+      /** Download bill PDF for a specific due */
+      downloadInvoicePdf: (dueId, label) =>
+        downloadFile(
+          `/api/resident/maintenance/invoice/${dueId}/pdf`,
+          `invoice-${label || dueId}.pdf`,
+        ),
+    },
+  },
+
+  // ── Guard portal ──────────────────────────────────────────────────────────
+  guard: {
+    /** Guard login — does NOT attach the Bearer token. */
+    login: (username, password) =>
+      post('/api/guard/login', { username, password }, { auth: false }),
+
+    /** Look up a pass by its code (requires guard JWT). */
+    verify: (passCode) => get(`/api/guard/verify/${passCode}`, {
+      token: localStorage.getItem('nexso_guard_token'),
+    }),
+
+    /** Mark a pass as USED (requires guard JWT). */
+    usePass: (id) => post(`/api/guard/passes/${id}/use`, {}, {
+      token: localStorage.getItem('nexso_guard_token'),
+    }),
+  },
+
+  // ── Public pass page (no auth) ────────────────────────────────────────────
+  passes: {
+    /** Fetch public pass details by pass code. */
+    get: (passCode) => get(`/api/passes/${passCode}`, { auth: false }),
   },
 
   // ── Vendor portal ─────────────────────────────────────────────────────────

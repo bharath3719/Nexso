@@ -219,14 +219,15 @@ CREATE INDEX IF NOT EXISTS idx_auth_accounts_vendor   ON auth_accounts (vendor_i
 
 -- Maintenance settings per unit (recurring amount + due day)
 CREATE TABLE IF NOT EXISTS maintenance_settings (
-  id         SERIAL PRIMARY KEY,
-  unit_id    INTEGER UNIQUE REFERENCES units(id) ON DELETE CASCADE,
-  society_id INTEGER REFERENCES societies(id) ON DELETE CASCADE,
-  enabled    BOOLEAN DEFAULT FALSE,
-  amount     NUMERIC,
-  due_day    INTEGER,
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  id              SERIAL PRIMARY KEY,
+  unit_id         INTEGER UNIQUE REFERENCES units(id) ON DELETE CASCADE,
+  society_id      INTEGER REFERENCES societies(id) ON DELETE CASCADE,
+  enabled         BOOLEAN DEFAULT FALSE,
+  amount          NUMERIC,
+  due_day         INTEGER,
+  bill_recipient  TEXT DEFAULT 'OWNER' CHECK (bill_recipient IN ('OWNER', 'TENANT')),
+  updated_at      TIMESTAMPTZ DEFAULT NOW(),
+  created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Maintenance dues — one row per resident per month
@@ -337,3 +338,70 @@ CREATE TABLE IF NOT EXISTS visitor_passes (
 CREATE INDEX IF NOT EXISTS idx_visitor_passes_unit     ON visitor_passes (unit_id);
 CREATE INDEX IF NOT EXISTS idx_visitor_passes_society  ON visitor_passes (society_id);
 CREATE INDEX IF NOT EXISTS idx_visitor_passes_passcode ON visitor_passes (pass_code);
+
+-- ── Account management ────────────────────────────────────────────────────────
+
+-- Monthly account closures (one per society per month after secretary closes books)
+CREATE TABLE IF NOT EXISTS monthly_closures (
+  id               SERIAL PRIMARY KEY,
+  society_id       INTEGER NOT NULL REFERENCES societies(id) ON DELETE CASCADE,
+  month            VARCHAR(7) NOT NULL,
+  status           TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','CLOSED')),
+  total_dues       INTEGER DEFAULT 0,
+  total_billed     NUMERIC(12,2) DEFAULT 0,
+  total_collected  NUMERIC(12,2) DEFAULT 0,
+  total_waived     NUMERIC(12,2) DEFAULT 0,
+  total_overdue    NUMERIC(12,2) DEFAULT 0,
+  total_expenses   NUMERIC(12,2) DEFAULT 0,
+  surplus_deficit  NUMERIC(12,2) DEFAULT 0,
+  closed_by        INTEGER REFERENCES auth_accounts(id) ON DELETE SET NULL,
+  closed_at        TIMESTAMPTZ,
+  reopened_by      INTEGER REFERENCES auth_accounts(id) ON DELETE SET NULL,
+  reopened_at      TIMESTAMPTZ,
+  reopen_reason    TEXT,
+  notes            TEXT,
+  created_at       TIMESTAMPTZ DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(society_id, month)
+);
+CREATE INDEX IF NOT EXISTS idx_monthly_closures_society ON monthly_closures (society_id);
+
+-- Invoice number registry (one per maintenance due — assigned on first PDF download)
+CREATE TABLE IF NOT EXISTS maintenance_invoices (
+  id             SERIAL PRIMARY KEY,
+  due_id         INTEGER NOT NULL REFERENCES maintenance_dues(id) ON DELETE CASCADE,
+  society_id     INTEGER NOT NULL REFERENCES societies(id) ON DELETE CASCADE,
+  invoice_number TEXT NOT NULL,
+  generated_at   TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(due_id),
+  UNIQUE(invoice_number)
+);
+CREATE INDEX IF NOT EXISTS idx_maintenance_invoices_society ON maintenance_invoices (society_id);
+
+-- Guard portal accounts (one per society, set up during onboarding step 3)
+CREATE TABLE IF NOT EXISTS guard_accounts (
+  id            SERIAL PRIMARY KEY,
+  society_id    INTEGER NOT NULL UNIQUE REFERENCES societies(id) ON DELETE CASCADE,
+  username      TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  is_active     BOOLEAN DEFAULT TRUE,
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_guard_accounts_username ON guard_accounts (LOWER(username));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_guard_accounts_society  ON guard_accounts (society_id);
+
+-- ── RES-103: Resident profile setup ──────────────────────────────────────────
+
+-- Flag so first-login residents are redirected to profile completion.
+ALTER TABLE auth_accounts ADD COLUMN IF NOT EXISTS force_profile_setup BOOLEAN DEFAULT TRUE;
+
+-- Resident profile extensions (vehicles list + emergency contact).
+ALTER TABLE residents ADD COLUMN IF NOT EXISTS vehicles          JSONB DEFAULT '[]';
+ALTER TABLE residents ADD COLUMN IF NOT EXISTS emergency_contact JSONB;
+
+-- Per-unit maintenance bill recipient (who gets the due + reminder).
+ALTER TABLE maintenance_settings ADD COLUMN IF NOT EXISTS bill_recipient TEXT DEFAULT 'OWNER';
+ALTER TABLE maintenance_settings DROP CONSTRAINT IF EXISTS maintenance_settings_bill_recipient_check;
+ALTER TABLE maintenance_settings ADD CONSTRAINT maintenance_settings_bill_recipient_check
+  CHECK (bill_recipient IN ('OWNER', 'TENANT'));

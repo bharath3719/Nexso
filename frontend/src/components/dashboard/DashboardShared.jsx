@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@fluentui/react";
-import "../styles/DashboardShared.css";
+import "../../styles/DashboardShared.css";
 
 export function PortalStatCard({ icon, iconBg, value, label, onClick }) {
   return (
@@ -30,6 +30,9 @@ export function useDashboardData(fetchStats, fetchTickets, { pollMs = 0, limit =
   fetchStatsRef.current   = fetchStats;
   fetchTicketsRef.current = fetchTickets;
 
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = useCallback(() => setReloadKey((k) => k + 1), []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -45,8 +48,14 @@ export function useDashboardData(fetchStats, fetchTickets, { pollMs = 0, limit =
           setStats(statsData);
           setTickets(ticketsData.tickets || []);
         }
-      } catch {
-        if (!cancelled) setError("Failed to load dashboard data.");
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err?.status === 0
+              ? "Could not reach the server. Check your connection."
+              : "Failed to load dashboard data. Please try again.",
+          );
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -58,7 +67,7 @@ export function useDashboardData(fetchStats, fetchTickets, { pollMs = 0, limit =
       cancelled = true;
       if (interval) clearInterval(interval);
     };
-  }, [pollMs, limit]);
+  }, [pollMs, limit, reloadKey]);
 
-  return { stats, tickets, loading, error };
+  return { stats, tickets, loading, error, reload };
 }

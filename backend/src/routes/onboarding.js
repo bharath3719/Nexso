@@ -714,4 +714,72 @@ router.post("/societies/:id/reset-secretary-password", async (req, res) => {
   }
 });
 
+// ── GET /api/onboarding/societies/:id/guard-account ──────────────────────────
+// Returns whether a guard account exists (no password returned).
+
+router.get("/societies/:id/guard-account", async (req, res) => {
+  const societyId = parseInt(req.params.id, 10);
+  if (!societyId) return res.status(400).json({ error: "invalid_id" });
+
+  try {
+    const result = await dbQuery(
+      `SELECT id, username, is_active, created_at FROM guard_accounts WHERE society_id = $1 LIMIT 1`,
+      [societyId],
+    );
+
+    if (!result?.rows?.length) {
+      return res.json({ exists: false });
+    }
+
+    const { username, is_active, created_at } = result.rows[0];
+    return res.json({ exists: true, username, isActive: is_active, createdAt: created_at });
+  } catch (err) {
+    console.error("Get guard account error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/onboarding/societies/:id/guard-account ─────────────────────────
+// Create or replace the guard account for a society.
+
+router.post("/societies/:id/guard-account", async (req, res) => {
+  const societyId = parseInt(req.params.id, 10);
+  if (!societyId) return res.status(400).json({ error: "invalid_id" });
+
+  const { username, password } = req.body || {};
+
+  if (!username?.trim()) {
+    return res.status(400).json({ error: "username_required" });
+  }
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: "password_too_short" });
+  }
+
+  try {
+    // Verify society exists
+    const soc = await dbQuery(`SELECT id FROM societies WHERE id = $1`, [societyId]);
+    if (!soc?.rows?.length) return res.status(404).json({ error: "society_not_found" });
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    await dbQuery(
+      `INSERT INTO guard_accounts (society_id, username, password_hash)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (society_id) DO UPDATE
+         SET username = EXCLUDED.username,
+             password_hash = EXCLUDED.password_hash,
+             updated_at = NOW()`,
+      [societyId, username.trim(), passwordHash],
+    );
+
+    return res.json({ success: true, username: username.trim() });
+  } catch (err) {
+    if (err.code === "23505") {
+      return res.status(409).json({ error: "username_taken" });
+    }
+    console.error("Set guard account error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
 export default router;

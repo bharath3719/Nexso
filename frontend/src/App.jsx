@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import {
   initializeIcons, ThemeProvider, Stack, Text,
   MessageBar, MessageBarType, TextField, PrimaryButton, DefaultButton, Spinner,
@@ -7,18 +7,18 @@ import {
 
 import { navLinks }           from "./constants.js";
 import { shellTheme, loginScreenStyles } from "./theme.js";
-import { Layout }             from "./components/Layout.jsx";
-import { Dashboard }          from "./pages/Dashboard.jsx";
-import { UsersPage }          from "./pages/Users.jsx";
-import { ComplaintsPage }     from "./pages/Complaints.jsx";
-import { VendorsPage }        from "./pages/Vendors.jsx";
-import { PaymentsPage }       from "./pages/Payments.jsx";
-import { MaintenancePage }    from "./pages/Maintenance.jsx";
-import { OnboardingPage }     from "./pages/Onboarding.jsx";
-import { OnboardingNewPage }  from "./pages/OnboardingNew.jsx";
-import { SocietyDetailPage }  from "./pages/SocietyDetail.jsx";
+import { Layout }             from "./components/layout/Layout.jsx";
+import { Dashboard }          from "./pages/admin/Dashboard.jsx";
+import { UsersPage }          from "./pages/admin/Users.jsx";
+import { ComplaintsPage }     from "./pages/admin/Complaints.jsx";
+import { VendorsPage }        from "./pages/admin/Vendors.jsx";
+import { PaymentsPage }       from "./pages/admin/Payments.jsx";
+import { MaintenancePage }    from "./pages/admin/Maintenance.jsx";
+import { OnboardingPage }     from "./pages/admin/Onboarding.jsx";
+import { OnboardingNewPage }  from "./pages/admin/OnboardingNew.jsx";
+import { SocietyDetailPage }  from "./pages/admin/SocietyDetail.jsx";
 
-import { SecretaryLayout }         from "./components/SecretaryLayout.jsx";
+import { SecretaryLayout }         from "./components/layout/SecretaryLayout.jsx";
 import { SecretaryDashboard }      from "./pages/secretary/SecretaryDashboard.jsx";
 import { SecretaryResidents }      from "./pages/secretary/SecretaryResidents.jsx";
 import { SecretaryTickets }        from "./pages/secretary/SecretaryTickets.jsx";
@@ -26,17 +26,23 @@ import { SecretaryProfile }        from "./pages/secretary/SecretaryProfile.jsx"
 import { SecretaryMaintenance }    from "./pages/secretary/SecretaryMaintenance.jsx";
 import { SecretaryAnnouncements }  from "./pages/secretary/SecretaryAnnouncements.jsx";
 
-import { ResidentLayout }          from "./components/ResidentLayout.jsx";
+import { ResidentLayout }          from "./components/layout/ResidentLayout.jsx";
 import { ResidentDashboard }       from "./pages/resident/ResidentDashboard.jsx";
 import { ResidentAnnouncements }   from "./pages/resident/ResidentAnnouncements.jsx";
 import { ResidentVisitorPasses }   from "./pages/resident/ResidentVisitorPasses.jsx";
+import { ResidentBilling }         from "./pages/resident/ResidentBilling.jsx";
+import { ResidentProfile }         from "./pages/resident/ResidentProfile.jsx";
 
-import { VendorLayout }    from "./components/VendorLayout.jsx";
+import { PublicPassPage }  from "./pages/public/PublicPassPage.jsx";
+import { GuardLogin }      from "./pages/guard/GuardLogin.jsx";
+import { GuardDashboard }  from "./pages/guard/GuardDashboard.jsx";
+
+import { VendorLayout }    from "./components/layout/VendorLayout.jsx";
 import { VendorDashboard } from "./pages/vendor/VendorDashboard.jsx";
 import { VendorTickets }   from "./pages/vendor/VendorTickets.jsx";
 import { VendorProfile }   from "./pages/vendor/VendorProfile.jsx";
 
-import { PasswordChangeFields } from "./components/PasswordChangeFields.jsx";
+import { PasswordChangeFields } from "./components/shared/PasswordChangeFields.jsx";
 
 import {
   saveSession, clearSession,
@@ -45,6 +51,77 @@ import {
   isLoggedIn,
 } from "./utils/authSession.js";
 import { api } from "./services/api.js";
+
+// ─── Guard session helpers ────────────────────────────────────────────────────
+
+const GUARD_KEY = "nexso_guard_session";
+
+function getGuardSession() {
+  try { return JSON.parse(localStorage.getItem(GUARD_KEY) || "null"); } catch { return null; }
+}
+function saveGuardSession(data) {
+  localStorage.setItem(GUARD_KEY, JSON.stringify(data));
+}
+function clearGuardSession() {
+  localStorage.removeItem(GUARD_KEY);
+}
+
+// ─── Guard portal (self-contained, no shared auth state) ─────────────────────
+
+function GuardPortalApp() {
+  const [session, setSession] = useState(() => getGuardSession());
+  const [error,   setError]   = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      clearGuardSession();
+      setSession(null);
+      setError("Session expired. Please sign in again.");
+    };
+    // Guard portal re-uses the same event but only cares when we're on /guard
+    window.addEventListener("nexso:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("nexso:unauthorized", handleUnauthorized);
+  }, []);
+
+  const handleLogin = useCallback(async ({ username, password }) => {
+    setError(""); setLoading(true);
+    try {
+      const data = await api.guard.login(username, password);
+      const sess = { token: data.token, societyId: data.societyId, societyName: data.societyName, username: data.username };
+      saveGuardSession(sess);
+      // Store token so api.js can attach it for guard calls
+      localStorage.setItem("nexso_guard_token", data.token);
+      setSession(sess);
+    } catch (err) {
+      setError(
+        err.code === "invalid_credentials" ? "Incorrect username or password." :
+        err.code === "account_inactive"    ? "This account is inactive." :
+        "Login failed. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    clearGuardSession();
+    localStorage.removeItem("nexso_guard_token");
+    setSession(null);
+    setError("");
+  }, []);
+
+  if (!session) {
+    return <GuardLogin onLogin={handleLogin} error={error} loading={loading} />;
+  }
+
+  return (
+    <GuardDashboard
+      societyName={session.societyName}
+      onLogout={handleLogout}
+    />
+  );
+}
 
 initializeIcons();
 
@@ -65,9 +142,9 @@ function AuthCard({ title, subtitle, error, children }) {
   );
 }
 
-// ─── LoginScreen ──────────────────────────────────────────────────────────────
+// ─── LoginScreen (username + password) ───────────────────────────────────────
 
-function LoginScreen({ onLogin, error, loading }) {
+function LoginScreen({ onLogin, error, loading, title = "Nexso", subtitle = "Sign in to continue.", footer }) {
   const [form, setForm] = useState({ username: "", password: "" });
 
   const handleSubmit = (e) => {
@@ -76,12 +153,11 @@ function LoginScreen({ onLogin, error, loading }) {
   };
 
   return (
-    <AuthCard title="Nexso" subtitle="Sign in to continue." error={error}>
+    <AuthCard title={title} subtitle={subtitle} error={error}>
       <form onSubmit={handleSubmit}>
         <Stack tokens={{ childrenGap: 12 }}>
           <TextField
             label="Username"
-            placeholder="admin  or  BLD-XXXXXX"
             value={form.username}
             onChange={(_, v) => setForm((s) => ({ ...s, username: v || "" }))}
             autoComplete="username"
@@ -103,6 +179,201 @@ function LoginScreen({ onLogin, error, loading }) {
           }
         </Stack>
       </form>
+      {footer}
+    </AuthCard>
+  );
+}
+
+// ─── AdminLoginScreen ─────────────────────────────────────────────────────────
+
+function AdminLoginScreen({ onLogin, error, loading }) {
+  const navigate = useNavigate();
+  return (
+    <LoginScreen
+      onLogin={onLogin}
+      error={error}
+      loading={loading}
+      title="Nexso Admin"
+      subtitle="Admin portal — authorised staff only."
+      footer={
+        <div className="login-portal-links">
+          <button className="login-portal-link" type="button" onClick={() => navigate("/")}>
+            ← Resident / Secretary Login
+          </button>
+        </div>
+      }
+    />
+  );
+}
+
+// ─── VendorLoginScreen ────────────────────────────────────────────────────────
+
+function VendorLoginScreen({ onLogin, error, loading }) {
+  const navigate = useNavigate();
+  return (
+    <LoginScreen
+      onLogin={onLogin}
+      error={error}
+      loading={loading}
+      title="Vendor Portal"
+      subtitle="Sign in to manage your service tickets."
+      footer={
+        <div className="login-portal-links">
+          <button className="login-portal-link" type="button" onClick={() => navigate("/")}>
+            ← Resident / Secretary Login
+          </button>
+        </div>
+      }
+    />
+  );
+}
+
+// ─── ResidentSecretaryLogin ───────────────────────────────────────────────────
+
+function ResidentSecretaryLogin({ onLogin, onOtpLogin, onClearError, error, loading }) {
+  const [tab,     setTab]     = useState("resident"); // "resident" | "secretary"
+  const [otpStep, setOtpStep] = useState("phone");    // "phone" | "otp"
+  const [phone,   setPhone]   = useState("");
+  const [otp,     setOtp]     = useState("");
+  const [devOtp,  setDevOtp]  = useState("");
+  const [secForm, setSecForm] = useState({ username: "", password: "" });
+  const navigate              = useNavigate();
+
+  const switchTab = (t) => {
+    setTab(t);
+    if (onClearError) onClearError();
+    setOtpStep("phone");
+    setOtp("");
+    setDevOtp("");
+  };
+
+  const handlePhoneSubmit = async (e) => {
+    e.preventDefault();
+    const result = await onOtpLogin({ step: "request", phone });
+    if (result?.otp) setDevOtp(result.otp);
+    if (result) setOtpStep("otp");
+  };
+
+  const handleOtpSubmit = (e) => {
+    e.preventDefault();
+    onOtpLogin({ step: "verify", phone, otp });
+  };
+
+  const handleSecSubmit = (e) => {
+    e.preventDefault();
+    onLogin(secForm);
+  };
+
+  const subtitle = tab === "resident"
+    ? (otpStep === "phone" ? "Enter your registered WhatsApp number." : `OTP sent to ${phone}. Enter it below.`)
+    : "Sign in with your secretary credentials.";
+
+  return (
+    <AuthCard title="Nexso" subtitle={subtitle} error={error}>
+      <div className="login-tabs">
+        <button
+          type="button"
+          className={`login-tab${tab === "resident" ? " login-tab--active" : ""}`}
+          onClick={() => switchTab("resident")}
+        >
+          Resident
+        </button>
+        <button
+          type="button"
+          className={`login-tab${tab === "secretary" ? " login-tab--active" : ""}`}
+          onClick={() => switchTab("secretary")}
+        >
+          Secretary
+        </button>
+      </div>
+
+      {tab === "resident" ? (
+        otpStep === "phone" ? (
+          <form onSubmit={handlePhoneSubmit}>
+            <Stack tokens={{ childrenGap: 12 }}>
+              <TextField
+                label="WhatsApp Number"
+                placeholder="91XXXXXXXXXX"
+                value={phone}
+                onChange={(_, v) => setPhone(v || "")}
+                autoComplete="tel"
+                required
+                disabled={loading}
+              />
+              {loading
+                ? <Spinner label="Sending OTP…" />
+                : <PrimaryButton type="submit" text="Send OTP" />
+              }
+            </Stack>
+          </form>
+        ) : (
+          <form onSubmit={handleOtpSubmit}>
+            <Stack tokens={{ childrenGap: 12 }}>
+              <TextField
+                label="One-Time Password"
+                placeholder="6-digit OTP"
+                value={otp}
+                onChange={(_, v) => setOtp(v || "")}
+                autoComplete="one-time-code"
+                required
+                disabled={loading}
+                maxLength={6}
+              />
+              {devOtp && (
+                <div style={{ background: "#fef9c3", borderRadius: 6, padding: "8px 12px", fontSize: 12, color: "#92400e" }}>
+                  Dev mode — OTP: <strong>{devOtp}</strong>
+                </div>
+              )}
+              {loading ? (
+                <Spinner label="Verifying…" />
+              ) : (
+                <Stack tokens={{ childrenGap: 8 }}>
+                  <PrimaryButton type="submit" text="Verify OTP" />
+                  <DefaultButton
+                    text="Change number"
+                    onClick={() => { setOtpStep("phone"); setOtp(""); setDevOtp(""); }}
+                  />
+                </Stack>
+              )}
+            </Stack>
+          </form>
+        )
+      ) : (
+        <form onSubmit={handleSecSubmit}>
+          <Stack tokens={{ childrenGap: 12 }}>
+            <TextField
+              label="Username"
+              placeholder="e.g. BLD-ABC123"
+              value={secForm.username}
+              onChange={(_, v) => setSecForm((s) => ({ ...s, username: v || "" }))}
+              autoComplete="username"
+              required
+              disabled={loading}
+            />
+            <TextField
+              label="Password"
+              type="password"
+              value={secForm.password}
+              onChange={(_, v) => setSecForm((s) => ({ ...s, password: v || "" }))}
+              autoComplete="current-password"
+              required
+              disabled={loading}
+            />
+            {loading
+              ? <Spinner label="Signing in…" />
+              : <PrimaryButton type="submit" text="Sign in" />
+            }
+          </Stack>
+        </form>
+      )}
+
+      <div className="login-portal-links">
+        <button className="login-portal-link" type="button" onClick={() => navigate("/admin")}>Admin Portal</button>
+        {" · "}
+        <button className="login-portal-link" type="button" onClick={() => navigate("/vendors")}>Vendor Portal</button>
+        {" · "}
+        <button className="login-portal-link" type="button" onClick={() => navigate("/guard")}>Guard Portal</button>
+      </div>
     </AuthCard>
   );
 }
@@ -145,109 +416,10 @@ function ForceResetScreen({ onReset, error, loading }) {
   );
 }
 
-// ─── OTP Login Screen ─────────────────────────────────────────────────────────
-
-function OtpLoginScreen({ onLogin, error, loading }) {
-  const [step,  setStep]  = useState("phone");   // "phone" | "otp"
-  const [phone, setPhone] = useState("");
-  const [otp,   setOtp]   = useState("");
-  const [devOtp, setDevOtp] = useState("");       // returned in dev mode
-
-  const handlePhoneSubmit = async (e) => {
-    e.preventDefault();
-    const result = await onLogin({ step: "request", phone });
-    if (result?.otp) setDevOtp(result.otp);       // dev-only
-    setStep("otp");
-  };
-
-  const handleOtpSubmit = (e) => {
-    e.preventDefault();
-    onLogin({ step: "verify", phone, otp });
-  };
-
-  return (
-    <AuthCard
-      title="Nexso Resident"
-      subtitle={step === "phone" ? "Enter your registered WhatsApp number." : `OTP sent to ${phone}. Enter it below.`}
-      error={error}
-    >
-      {step === "phone" ? (
-        <form onSubmit={handlePhoneSubmit}>
-          <Stack tokens={{ childrenGap: 12 }}>
-            <TextField
-              label="WhatsApp Number"
-              placeholder="91XXXXXXXXXX"
-              value={phone}
-              onChange={(_, v) => setPhone(v || "")}
-              autoComplete="tel"
-              required
-              disabled={loading}
-            />
-            {loading
-              ? <Spinner label="Sending OTP…" />
-              : <PrimaryButton type="submit" text="Send OTP" />
-            }
-          </Stack>
-        </form>
-      ) : (
-        <form onSubmit={handleOtpSubmit}>
-          <Stack tokens={{ childrenGap: 12 }}>
-            <TextField
-              label="One-Time Password"
-              placeholder="6-digit OTP"
-              value={otp}
-              onChange={(_, v) => setOtp(v || "")}
-              autoComplete="one-time-code"
-              required
-              disabled={loading}
-              maxLength={6}
-            />
-            {devOtp && (
-              <div style={{ background: "#fef9c3", borderRadius: 6, padding: "8px 12px", fontSize: 12, color: "#92400e" }}>
-                Dev mode — OTP: <strong>{devOtp}</strong>
-              </div>
-            )}
-            {loading
-              ? <Spinner label="Verifying…" />
-              : (
-                <Stack tokens={{ childrenGap: 8 }}>
-                  <PrimaryButton type="submit" text="Verify OTP" />
-                  <DefaultButton
-                    text="Change number"
-                    onClick={() => { setStep("phone"); setOtp(""); setDevOtp(""); }}
-                  />
-                </Stack>
-              )
-            }
-          </Stack>
-        </form>
-      )}
-    </AuthCard>
-  );
-}
-
-// ─── Login portal selector ────────────────────────────────────────────────────
-
-function PortalSelector({ onSelectAdmin, onSelectResident }) {
-  return (
-    <ThemeProvider theme={shellTheme}>
-      <Stack verticalFill verticalAlign="center" horizontalAlign="center" styles={loginScreenStyles.outer}>
-        <Stack styles={loginScreenStyles.card} tokens={{ childrenGap: 20 }}>
-          <Text variant="xLarge" styles={loginScreenStyles.title}>Nexso</Text>
-          <Text variant="small" styles={loginScreenStyles.subtitle}>Choose your portal.</Text>
-          <Stack tokens={{ childrenGap: 10 }}>
-            <PrimaryButton text="Admin / Secretary / Vendor" onClick={onSelectAdmin} />
-            <DefaultButton text="Resident Login (WhatsApp OTP)" onClick={onSelectResident} />
-          </Stack>
-        </Stack>
-      </Stack>
-    </ThemeProvider>
-  );
-}
-
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const location = useLocation();
   const [session, setSession] = useState(() => ({
     authed:             isLoggedIn(),
     role:               getRole(),
@@ -260,8 +432,8 @@ export default function App() {
     unitNumber:         getUnitNumber(),
     residentName:       getResidentName(),
     forcePasswordReset: false,
+    forceProfileSetup:  false,
   }));
-  const [portalMode, setPortalMode] = useState("selector"); // "selector" | "admin" | "resident"
   const [loginError,  setLoginError]  = useState("");
   const [resetError,  setResetError]  = useState("");
   const [loading,     setLoading]     = useState(false);
@@ -270,13 +442,17 @@ export default function App() {
 
   useEffect(() => {
     const handleUnauthorized = () => {
-      setSession({ authed: false, role: null, societyId: null, societyName: null, username: null, vendorId: null, residentId: null, unitId: null, unitNumber: null, residentName: null, forcePasswordReset: false });
+      setSession({ authed: false, role: null, societyId: null, societyName: null, username: null, vendorId: null, residentId: null, unitId: null, unitNumber: null, residentName: null, forcePasswordReset: false, forceProfileSetup: false });
       setLoginError("Your session has expired. Please sign in again.");
-      setPortalMode("selector");
     };
     window.addEventListener("nexso:unauthorized", handleUnauthorized);
     return () => window.removeEventListener("nexso:unauthorized", handleUnauthorized);
   }, []);
+
+  // Clear any stale login error when the user navigates between login pages.
+  useEffect(() => {
+    setLoginError("");
+  }, [location.pathname]);
 
   // ── Admin login ───────────────────────────────────────────────────────────
 
@@ -327,17 +503,18 @@ export default function App() {
       const data = await api.auth.otpVerify(phone, otp);
       saveSession(data);
       setSession({
-        authed:       true,
-        role:         "RESIDENT",
-        societyId:    data.societyId,
-        societyName:  data.societyName,
-        username:     phone,
-        vendorId:     null,
-        residentId:   data.residentId,
-        unitId:       data.unitId,
-        unitNumber:   data.unitNumber,
-        residentName: data.name,
+        authed:            true,
+        role:              "RESIDENT",
+        societyId:         data.societyId,
+        societyName:       data.societyName,
+        username:          phone,
+        vendorId:          null,
+        residentId:        data.residentId,
+        unitId:            data.unitId,
+        unitNumber:        data.unitNumber,
+        residentName:      data.name,
         forcePasswordReset: false,
+        forceProfileSetup:  data.forceProfileSetup ?? false,
       });
     } catch (err) {
       setLoginError(
@@ -377,36 +554,50 @@ export default function App() {
     }
   }, []);
 
+  // ── Profile setup complete (first login) ─────────────────────────────────
+
+  const handleProfileComplete = useCallback(() => {
+    setSession((s) => ({ ...s, forceProfileSetup: false }));
+  }, []);
+
   // ── Logout ────────────────────────────────────────────────────────────────
 
   const handleLogout = useCallback(() => {
     clearSession();
-    setSession({ authed: false, role: null, societyId: null, societyName: null, username: null, vendorId: null, residentId: null, unitId: null, unitNumber: null, residentName: null, forcePasswordReset: false });
+    setSession({ authed: false, role: null, societyId: null, societyName: null, username: null, vendorId: null, residentId: null, unitId: null, unitNumber: null, residentName: null, forcePasswordReset: false, forceProfileSetup: false });
     setLoginError("");
-    setPortalMode("selector");
   }, []);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  if (location.pathname.startsWith("/pass/")) {
+    return (
+      <Routes>
+        <Route path="/pass/:passCode" element={<PublicPassPage />} />
+      </Routes>
+    );
+  }
+
+  if (location.pathname.startsWith("/guard")) {
+    return <GuardPortalApp />;
+  }
+
   if (!session.authed) {
-    if (portalMode === "selector") {
-      return (
-        <PortalSelector
-          onSelectAdmin={() => setPortalMode("admin")}
-          onSelectResident={() => setPortalMode("resident")}
-        />
-      );
+    if (location.pathname.startsWith("/admin")) {
+      return <AdminLoginScreen onLogin={handleLogin} error={loginError} loading={loading} />;
     }
-    if (portalMode === "resident") {
-      return (
-        <OtpLoginScreen
-          onLogin={handleOtpLogin}
-          error={loginError}
-          loading={loading}
-        />
-      );
+    if (location.pathname.startsWith("/vendor")) {
+      return <VendorLoginScreen onLogin={handleLogin} error={loginError} loading={loading} />;
     }
-    return <LoginScreen onLogin={handleLogin} error={loginError} loading={loading} />;
+    return (
+      <ResidentSecretaryLogin
+        onLogin={handleLogin}
+        onOtpLogin={handleOtpLogin}
+        onClearError={() => setLoginError("")}
+        error={loginError}
+        loading={loading}
+      />
+    );
   }
 
   if (session.forcePasswordReset) {
@@ -416,6 +607,21 @@ export default function App() {
   // ── Resident portal ───────────────────────────────────────────────────────
 
   if (session.role === "RESIDENT") {
+    // First-login gate: show only the profile setup form until complete.
+    if (session.forceProfileSetup) {
+      return (
+        <ThemeProvider theme={shellTheme}>
+          <ResidentLayout
+            unitNumber={session.unitNumber}
+            societyName={session.societyName}
+            onLogout={handleLogout}
+          >
+            <ResidentProfile isFirstSetup onComplete={handleProfileComplete} />
+          </ResidentLayout>
+        </ThemeProvider>
+      );
+    }
+
     return (
       <ThemeProvider theme={shellTheme}>
         <ResidentLayout
@@ -426,8 +632,10 @@ export default function App() {
           <Routes>
             <Route path="/"                          element={<Navigate to="/resident" replace />} />
             <Route path="/resident"                  element={<ResidentDashboard unitNumber={session.unitNumber} societyName={session.societyName} residentName={session.residentName} />} />
+            <Route path="/resident/billing"          element={<ResidentBilling />} />
             <Route path="/resident/announcements"    element={<ResidentAnnouncements />} />
             <Route path="/resident/visitor-passes"   element={<ResidentVisitorPasses />} />
+            <Route path="/resident/profile"          element={<ResidentProfile onComplete={handleProfileComplete} />} />
             <Route path="*"                          element={<Navigate to="/resident" replace />} />
           </Routes>
         </ResidentLayout>

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Stack, Text, DefaultButton, Link, Icon } from "@fluentui/react";
-import { T } from "../styles/typography.js";
-import { api } from "../services/api.js";
-import "../styles/Vendor.css";
+import { T } from "../../styles/typography.js";
+import { api } from "../../services/api.js";
+import "../../styles/Vendor.css";
 
 export default function VendorDocuments({ vendorId }) {
   const [docs, setDocs] = useState([]);

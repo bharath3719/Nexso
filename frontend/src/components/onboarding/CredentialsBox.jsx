@@ -1,16 +1,17 @@
 import React from "react";
+import "../../styles/app.css";
 
 export function CredentialsBox({ username, password }) {
   return (
-    <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, padding: "14px 16px" }}>
-      <div style={{ fontFamily: "monospace", fontSize: 15, lineHeight: "2", userSelect: "all" }}>
+    <div className="creds-box">
+      <div className="creds-box__mono">
         <div>
-          <span style={{ color: "#64748b", fontSize: 12 }}>Username  </span>
-          <strong style={{ color: "#15803d" }}>{username}</strong>
+          <span className="creds-box__label">Username  </span>
+          <strong className="creds-box__value">{username}</strong>
         </div>
         <div>
-          <span style={{ color: "#64748b", fontSize: 12 }}>Password  </span>
-          <strong style={{ color: "#15803d" }}>{password}</strong>
+          <span className="creds-box__label">Password  </span>
+          <strong className="creds-box__value">{password}</strong>
         </div>
       </div>
     </div>

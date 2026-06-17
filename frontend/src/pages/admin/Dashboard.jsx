@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { IconButton, MessageBar, MessageBarType, Separator, Stack, Text } from "@fluentui/react";
-import { useJsonData } from "../hooks/useJsonData.js";
-import { StatsCards } from "../components/StatsCards.jsx";
-import { TicketsTable } from "../components/TicketsTable.jsx";
-import { PageHeader } from "../components/PageHeader.jsx";
-import { T } from "../styles/typography.js";
-import { filterIconButtonStyles } from "../theme.js";
+import { useJsonData } from "../../hooks/useJsonData.js";
+import { StatsCards } from "../../components/dashboard/StatsCards.jsx";
+import { TicketsTable } from "../../components/tickets/TicketsTable.jsx";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
+import { T } from "../../styles/typography.js";
+import { filterIconButtonStyles } from "../../theme.js";
 
 const PAGE_SIZE = 5;
 

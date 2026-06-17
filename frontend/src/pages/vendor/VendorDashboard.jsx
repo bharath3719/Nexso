@@ -1,15 +1,16 @@
 import React from "react";
 import { Text, Spinner, Icon } from "@fluentui/react";
 import { useNavigate } from "react-router-dom";
-import { PageHeader } from "../../components/PageHeader.jsx";
-import { STATUS_COLORS, StatusBadge } from "../../components/TicketShared.jsx";
-import { PortalStatCard, useDashboardData } from "../../components/DashboardShared.jsx";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
+import { STATUS_COLORS, StatusBadge } from "../../components/tickets/TicketShared.jsx";
+import { PortalStatCard, useDashboardData } from "../../components/dashboard/DashboardShared.jsx";
+import { ErrorBanner } from "../../components/shared/ErrorBanner.jsx";
 import { api } from "../../services/api.js";
 import "../../styles/VendorLayout.css";
 
 export function VendorDashboard({ vendorName }) {
   const navigate = useNavigate();
-  const { stats, tickets, loading, error } = useDashboardData(
+  const { stats, tickets, loading, error, reload } = useDashboardData(
     api.vendorPortal.stats,
     api.vendorPortal.tickets,
   );
@@ -23,11 +24,7 @@ export function VendorDashboard({ vendorName }) {
         subtitle="Manage your assigned service tickets"
       />
 
-      {error && (
-        <div style={{ color: "#dc2626", background: "#fef2f2", borderRadius: 8, padding: "12px 16px", fontSize: 14 }}>
-          {error}
-        </div>
-      )}
+      <ErrorBanner message={error} onRetry={reload} />
 
       {loading ? (
         <Spinner label="Loading dashboard…" />

@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { Text, Spinner } from "@fluentui/react";
-import { PageHeader } from "../../components/PageHeader.jsx";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
+import { ErrorBanner, getErrMsg } from "../../components/shared/ErrorBanner.jsx";
 import { api } from "../../services/api.js";
 import "../../styles/ResidentLayout.css";
 
@@ -41,14 +42,16 @@ export function ResidentAnnouncements() {
   const [loading, setLoading]             = React.useState(true);
   const [error, setError]                 = React.useState("");
 
-  React.useEffect(() => {
-    let cancelled = false;
+  const load = useCallback(() => {
+    setLoading(true);
+    setError("");
     api.resident.announcements()
-      .then((d) => { if (!cancelled) setAnnouncements(d.announcements || []); })
-      .catch((e) => { if (!cancelled) setError(e.message || "Failed to load announcements."); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .then((d) => setAnnouncements(d.announcements || []))
+      .catch((e) => setError(getErrMsg(e, "Failed to load announcements.")))
+      .finally(() => setLoading(false));
   }, []);
+
+  React.useEffect(() => { load(); }, [load]);
 
   const pinned  = announcements.filter((a) => a.pinned);
   const urgent  = announcements.filter((a) => !a.pinned && a.priority === "URGENT");
@@ -60,11 +63,7 @@ export function ResidentAnnouncements() {
     <div className="res-page">
       <PageHeader title="Announcements" subtitle="Official notices from your society secretary" />
 
-      {error && (
-        <div style={{ background: "#fef2f2", color: "#dc2626", borderRadius: 8, padding: "12px 16px", fontSize: 14 }}>
-          {error}
-        </div>
-      )}
+      <ErrorBanner message={error} onRetry={load} />
 
       {loading ? (
         <Spinner label="Loading announcements…" />

@@ -35,11 +35,15 @@ try {
   process.stdout.write("🗑  Dropping all tables… ");
   await db.query(`
     DROP TABLE IF EXISTS
+      otp_tokens,
+      maintenance_invoices, monthly_closures, maintenance_expense_sheets,
       maintenance_dues, maintenance_settings,
+      visitor_passes, announcements,
       ticket_activity_logs, ticket_messages, tickets,
       vendor_documents, vendor_service_areas, vendor_suspensions,
       whatsapp_outbound_messages, whatsapp_sessions, whatsapp_messages,
-      auth_accounts, residents, units, floors, towers,
+      guard_accounts, auth_accounts,
+      residents, units, floors, towers,
       vendors, users, societies
     CASCADE
   `);

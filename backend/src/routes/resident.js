@@ -9,16 +9,88 @@
  *   GET  /api/resident/visitor-passes              — list own visitor passes
  *   POST /api/resident/visitor-passes              — create a visitor pass
  *   PATCH /api/resident/visitor-passes/:id/revoke  — revoke a pass
+ *   GET  /api/resident/maintenance/dues            — list own dues
+ *   GET  /api/resident/maintenance/invoice/:dueId/pdf — download bill PDF
  */
 
 import express from "express";
 import crypto  from "crypto";
 import { dbQuery }        from "../db/index.js";
 import { requireResident } from "../middleware/auth.js";
+import {
+  generateBillPdf, getOrCreateInvoiceNumber, computeBill,
+} from "../services/billPdf.js";
 
 const router = express.Router();
 
 router.use(requireResident);
+
+// ── GET /api/resident/profile ─────────────────────────────────────────────────
+
+router.get("/profile", async (req, res) => {
+  try {
+    const { residentId } = req.user;
+
+    const result = await dbQuery(
+      `SELECT id, name, phone, email, preferred_contact, bhk, resident_type,
+              family_members, vehicles, emergency_contact
+       FROM residents WHERE id = $1`,
+      [residentId],
+    );
+
+    const profile = result?.rows?.[0];
+    if (!profile) return res.status(404).json({ error: "resident_not_found" });
+
+    return res.json({ profile });
+  } catch (err) {
+    console.error("Resident profile GET error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── PATCH /api/resident/profile ───────────────────────────────────────────────
+
+router.patch("/profile", async (req, res) => {
+  try {
+    const { residentId } = req.user;
+    const { email, preferred_contact, bhk, family_members, vehicles, emergency_contact } = req.body || {};
+
+    const result = await dbQuery(
+      `UPDATE residents
+       SET email             = $1,
+           preferred_contact = $2,
+           bhk               = $3,
+           family_members    = $4,
+           vehicles          = $5::jsonb,
+           emergency_contact = $6::jsonb
+       WHERE id = $7
+       RETURNING id, name, phone, email, preferred_contact, bhk, resident_type,
+                 family_members, vehicles, emergency_contact`,
+      [
+        email     ?? null,
+        preferred_contact ?? null,
+        bhk       ?? null,
+        family_members !== undefined ? Number(family_members) : null,
+        JSON.stringify(vehicles ?? []),
+        emergency_contact ? JSON.stringify(emergency_contact) : null,
+        residentId,
+      ],
+    );
+
+    if (!result?.rows?.length) return res.status(404).json({ error: "resident_not_found" });
+
+    // Clear the first-login profile setup flag.
+    await dbQuery(
+      `UPDATE auth_accounts SET force_profile_setup = FALSE WHERE resident_id = $1`,
+      [residentId],
+    );
+
+    return res.json({ profile: result.rows[0] });
+  } catch (err) {
+    console.error("Resident profile PATCH error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
 
 // ── GET /api/resident/announcements ───────────────────────────────────────────
 
@@ -144,6 +216,126 @@ router.patch("/visitor-passes/:id/revoke", async (req, res) => {
     return res.json({ pass: result.rows[0] });
   } catch (err) {
     console.error("Revoke visitor pass error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/resident/maintenance/dues ───────────────────────────────────────
+// Returns dues for the logged-in resident.
+// ?type=pending → PENDING + OVERDUE only; ?type=history → PAID + WAIVED only.
+
+router.get("/maintenance/dues", async (req, res) => {
+  try {
+    const { residentId, societyId } = req.user;
+    const { type } = req.query;
+
+    let statuses;
+    if (type === "pending")  statuses = ["PENDING", "OVERDUE"];
+    else if (type === "history") statuses = ["PAID", "WAIVED"];
+    else statuses = ["PENDING", "OVERDUE", "PAID", "WAIVED"];
+
+    const result = await dbQuery(
+      `SELECT md.id, md.due_month, md.amount, md.due_date, md.status,
+              md.payment_reference, md.payment_date, md.payment_link,
+              md.base_amount, md.expense_share, md.previously_due,
+              md.interest_amount, md.breakdown,
+              mi.invoice_number
+       FROM maintenance_dues md
+       LEFT JOIN maintenance_invoices mi ON mi.due_id = md.id
+       WHERE md.resident_id = $1 AND md.society_id = $2
+         AND md.status = ANY($3::text[])
+       ORDER BY md.due_date DESC`,
+      [residentId, societyId, statuses],
+    );
+
+    return res.json({ dues: result?.rows || [] });
+  } catch (err) {
+    console.error("Resident dues list error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/resident/maintenance/invoice/:dueId/pdf ─────────────────────────
+// Downloads the bill PDF for a specific due that belongs to this resident.
+
+router.get("/maintenance/invoice/:dueId/pdf", async (req, res) => {
+  try {
+    const { residentId, societyId } = req.user;
+    const { dueId } = req.params;
+
+    const [dueRes, socRes] = await Promise.all([
+      dbQuery(
+        `SELECT md.*, r.name AS resident_name, u.unit_number,
+                COALESCE(td.name, tf.name) AS tower_name,
+                r.phone AS resident_phone
+         FROM maintenance_dues md
+         JOIN residents r ON r.id = md.resident_id
+         JOIN units u ON u.id = r.unit_id
+         LEFT JOIN towers td ON td.id = u.tower_id
+         LEFT JOIN floors f  ON f.id  = u.floor_id
+         LEFT JOIN towers tf ON tf.id = f.tower_id
+         WHERE md.id = $1 AND md.resident_id = $2 AND md.society_id = $3`,
+        [dueId, residentId, societyId],
+      ),
+      dbQuery(
+        `SELECT name, address, maintenance_upi_id, code FROM societies WHERE id = $1`,
+        [societyId],
+      ),
+    ]);
+
+    if (!dueRes?.rows?.length) return res.status(404).json({ error: "due_not_found" });
+
+    const due     = dueRes.rows[0];
+    const society = socRes.rows[0] || {};
+
+    const invoiceNumber = await getOrCreateInvoiceNumber(dueId, societyId, society.code);
+
+    let bill;
+    if (due.breakdown && due.base_amount !== null) {
+      const bd = typeof due.breakdown === "string" ? JSON.parse(due.breakdown) : due.breakdown;
+      const unitCount = bd.unit_count || 1;
+      const toPerUnit = (items) => (items || []).map((item) => ({
+        particulars:  item.particulars,
+        total_amount: Number(item.total_amount || 0),
+        per_unit:     Math.round((Number(item.total_amount || 0) / unitCount) * 100) / 100,
+      }));
+
+      bill = {
+        society:         { name: society.name || "", address: society.address || "" },
+        resident:        {
+          name:        due.resident_name,
+          unit_number: due.tower_name ? `${due.tower_name} · ${due.unit_number}` : due.unit_number,
+        },
+        month:           due.due_month,
+        fixed_items:     toPerUnit(bd.fixed_items),
+        variable_items:  toPerUnit(bd.variable_items),
+        fixed_total:     (bd.fixed_items || []).reduce((s, i) => s + Number(i.total_amount || 0) / unitCount, 0),
+        variable_total:  (bd.variable_items || []).reduce((s, i) => s + Number(i.total_amount || 0) / unitCount, 0),
+        base_amount:     Number(due.base_amount || 0),
+        expense_share:   Number(due.expense_share || 0),
+        previously_due:  Number(due.previously_due || 0),
+        interest_rate:   21,
+        interest_amount: Number(due.interest_amount || 0),
+        total:           Number(due.amount || 0),
+        unit_count:      unitCount,
+      };
+    } else {
+      bill = await computeBill(societyId, residentId, due.due_month);
+    }
+
+    const buffer = await generateBillPdf(
+      bill,
+      due.payment_link || null,
+      society.maintenance_upi_id || null,
+      invoiceNumber,
+    );
+
+    const filename = `invoice-${invoiceNumber.replace(/\//g, "-")}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.send(buffer);
+  } catch (err) {
+    console.error("Resident invoice PDF error:", err);
     return res.status(500).json({ error: "internal_error" });
   }
 });

@@ -330,9 +330,19 @@ export async function ensureSchema() {
     await db.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS unit_id      INTEGER REFERENCES units(id) ON DELETE SET NULL`);
     await db.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ`);
 
-    // One OWNER and one TENANT per unit
-    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_residents_unit_owner  ON residents(unit_id) WHERE resident_type = 'OWNER'  AND unit_id IS NOT NULL`);
-    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_residents_unit_tenant ON residents(unit_id) WHERE resident_type = 'TENANT' AND unit_id IS NOT NULL`);
+    // One OWNER and one TENANT per unit (non-fatal — existing data may have duplicates)
+    await db.query(`
+      DO $$ BEGIN
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_residents_unit_owner
+          ON residents(unit_id) WHERE resident_type = 'OWNER' AND unit_id IS NOT NULL;
+      EXCEPTION WHEN others THEN NULL; END $$;
+    `);
+    await db.query(`
+      DO $$ BEGIN
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_residents_unit_tenant
+          ON residents(unit_id) WHERE resident_type = 'TENANT' AND unit_id IS NOT NULL;
+      EXCEPTION WHEN others THEN NULL; END $$;
+    `);
 
     // ── OTP tokens (resident WhatsApp login) ──────────────────────────────────
     await db.query(`CREATE TABLE IF NOT EXISTS otp_tokens (
@@ -381,6 +391,55 @@ export async function ensureSchema() {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_visitor_passes_unit     ON visitor_passes (unit_id)`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_visitor_passes_society  ON visitor_passes (society_id)`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_visitor_passes_passcode ON visitor_passes (pass_code)`);
+
+    // ── Month-end closures ────────────────────────────────────────────────────
+    await db.query(`CREATE TABLE IF NOT EXISTS monthly_closures (
+      id               SERIAL PRIMARY KEY,
+      society_id       INTEGER NOT NULL REFERENCES societies(id) ON DELETE CASCADE,
+      month            VARCHAR(7) NOT NULL,
+      status           TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','CLOSED')),
+      total_dues       INTEGER DEFAULT 0,
+      total_billed     NUMERIC(12,2) DEFAULT 0,
+      total_collected  NUMERIC(12,2) DEFAULT 0,
+      total_waived     NUMERIC(12,2) DEFAULT 0,
+      total_overdue    NUMERIC(12,2) DEFAULT 0,
+      total_expenses   NUMERIC(12,2) DEFAULT 0,
+      surplus_deficit  NUMERIC(12,2) DEFAULT 0,
+      closed_by        INTEGER REFERENCES auth_accounts(id) ON DELETE SET NULL,
+      closed_at        TIMESTAMPTZ,
+      reopened_by      INTEGER REFERENCES auth_accounts(id) ON DELETE SET NULL,
+      reopened_at      TIMESTAMPTZ,
+      reopen_reason    TEXT,
+      notes            TEXT,
+      created_at       TIMESTAMPTZ DEFAULT NOW(),
+      updated_at       TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(society_id, month)
+    )`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_monthly_closures_society ON monthly_closures (society_id)`);
+
+    await db.query(`CREATE TABLE IF NOT EXISTS maintenance_invoices (
+      id             SERIAL PRIMARY KEY,
+      due_id         INTEGER NOT NULL REFERENCES maintenance_dues(id) ON DELETE CASCADE,
+      society_id     INTEGER NOT NULL REFERENCES societies(id) ON DELETE CASCADE,
+      invoice_number TEXT NOT NULL,
+      generated_at   TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(due_id),
+      UNIQUE(invoice_number)
+    )`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_maintenance_invoices_society ON maintenance_invoices (society_id)`);
+
+    // ── Guard portal accounts (one per society) ───────────────────────────────
+    await db.query(`CREATE TABLE IF NOT EXISTS guard_accounts (
+      id            SERIAL PRIMARY KEY,
+      society_id    INTEGER NOT NULL UNIQUE REFERENCES societies(id) ON DELETE CASCADE,
+      username      TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      is_active     BOOLEAN DEFAULT TRUE,
+      created_at    TIMESTAMPTZ DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_guard_accounts_username ON guard_accounts (LOWER(username))`);
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_guard_accounts_society ON guard_accounts (society_id)`);
 
     await db.query("COMMIT");
     connected = true;

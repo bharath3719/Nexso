@@ -18,7 +18,7 @@
 
 import React from "react";
 import { Stack, Text } from "@fluentui/react";
-import { T } from "../styles/typography.js";
+import { T } from "../../styles/typography.js";
 
 export function PageHeader({ title, subtitle, action }) {
   return (

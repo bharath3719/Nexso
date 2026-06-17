@@ -11,8 +11,9 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Dropdown, Spinner, Text } from "@fluentui/react";
 import { useSearchParams } from "react-router-dom";
-import { PageHeader } from "../../components/PageHeader.jsx";
-import { StatusBadge, STATUS_COLORS, PRIORITY_COLORS, TicketTableHeader } from "../../components/TicketShared.jsx";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
+import { StatusBadge, STATUS_COLORS, PRIORITY_COLORS, TicketTableHeader } from "../../components/tickets/TicketShared.jsx";
+import { ErrorBanner, getErrMsg } from "../../components/shared/ErrorBanner.jsx";
 import { api } from "../../services/api.js";
 import "../../styles/VendorLayout.css";
 
@@ -53,7 +54,7 @@ function TicketDetailPanel({ ticket, onClose, onStatusUpdated }) {
       const data = await api.vendorPortal.updateStatus(ticket.id);
       onStatusUpdated(data.ticket);
     } catch (err) {
-      setError(err.message || "Failed to update ticket status.");
+      setError(getErrMsg(err, "Failed to update ticket status."));
     } finally {
       setUpdating(false);
     }
@@ -155,11 +156,7 @@ function TicketDetailPanel({ ticket, onClose, onStatusUpdated }) {
             </DetailRow>
           </div>
 
-          {error && (
-            <div style={{ background: "#fef2f2", color: "#dc2626", borderRadius: 6, padding: "10px 14px", fontSize: 13 }}>
-              {error}
-            </div>
-          )}
+          <ErrorBanner message={error} />
         </div>
 
         {/* Footer with action */}
@@ -213,8 +210,8 @@ export function VendorTickets() {
       if (s && s !== "ALL") params.status = s;
       const data = await api.vendorPortal.tickets(params);
       setTickets(data.tickets || []);
-    } catch {
-      setError("Failed to load tickets.");
+    } catch (err) {
+      setError(getErrMsg(err, "Failed to load tickets."));
     } finally {
       setLoading(false);
     }
@@ -282,11 +279,7 @@ export function VendorTickets() {
         })}
       </div>
 
-      {error && (
-        <div style={{ color: "#dc2626", background: "#fef2f2", borderRadius: 8, padding: "12px 16px", fontSize: 14 }}>
-          {error}
-        </div>
-      )}
+      <ErrorBanner message={error} onRetry={() => load(status)} />
 
       <div className="vnd-card">
         {loading ? (

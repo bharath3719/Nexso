@@ -25,6 +25,7 @@ coverage/
 
 # Generated files
 bills/
+*.pdf
 
 # Editor/OS files
 .DS_Store

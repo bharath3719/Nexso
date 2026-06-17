@@ -20,6 +20,10 @@ import { requireSecretary } from "../middleware/auth.js";
 import { sendWhatsAppText } from "../services/notifications.js";
 import { sendMaintenanceReminderEmail, isEmailConfigured } from "../services/email.js";
 import { createPaymentLink, isRazorpayConfigured } from "../services/razorpayService.js";
+import {
+  generateBillPdf, generateCollectionRegisterPdf, generateClosurePdf,
+  getOrCreateInvoiceNumber, computeBill,
+} from "../services/billPdf.js";
 
 const router = express.Router();
 
@@ -104,9 +108,10 @@ router.get("/residents", async (req, res) => {
 
     let sql = `
       SELECT r.*, u.unit_number, t.name AS tower_name,
-             ms.enabled  AS maintenance_enabled,
-             ms.amount   AS maintenance_amount,
-             ms.due_day  AS maintenance_due_day
+             ms.enabled         AS maintenance_enabled,
+             ms.amount          AS maintenance_amount,
+             ms.due_day         AS maintenance_due_day,
+             ms.bill_recipient  AS maintenance_bill_recipient
       FROM residents r
       JOIN units  u ON u.id = r.unit_id
       LEFT JOIN towers t ON t.id = u.tower_id
@@ -243,6 +248,7 @@ router.post("/residents", async (req, res) => {
     maintenance_enabled = false,
     maintenance_amount,
     maintenance_due_day,
+    maintenance_bill_recipient,
   } = req.body || {};
 
   if (!name?.trim())    return res.status(400).json({ error: "name_required" });
@@ -264,6 +270,10 @@ router.post("/residents", async (req, res) => {
 
     // One OWNER + one TENANT per unit
     const normalizedType = (resident_type || "OWNER").toUpperCase();
+    if (!["OWNER", "TENANT"].includes(normalizedType)) {
+      return res.status(400).json({ error: "invalid_resident_type", message: "resident_type must be OWNER or TENANT." });
+    }
+    const typeLabel = normalizedType === "OWNER" ? "Owner" : "Tenant";
     const occupancyCheck = await dbQuery(
       `SELECT id FROM residents WHERE unit_id = $1 AND resident_type = $2 LIMIT 1`,
       [unit_id, normalizedType],
@@ -271,7 +281,7 @@ router.post("/residents", async (req, res) => {
     if (occupancyCheck?.rows?.length) {
       return res.status(409).json({
         error: "occupancy_conflict",
-        message: `This unit already has an ${normalizedType}. Remove the existing ${normalizedType} before adding a new one.`,
+        message: `This unit already has an ${typeLabel}. Remove the existing ${typeLabel} before adding a new one.`,
       });
     }
 
@@ -298,28 +308,31 @@ router.post("/residents", async (req, res) => {
     const resident = result.rows[0];
 
     // Upsert maintenance settings per unit (not per resident)
-    if (maintenance_enabled || maintenance_amount || maintenance_due_day) {
-      await dbQuery(
-        `INSERT INTO maintenance_settings (unit_id, society_id, enabled, amount, due_day)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (unit_id) DO UPDATE SET
-           enabled    = EXCLUDED.enabled,
-           amount     = EXCLUDED.amount,
-           due_day    = EXCLUDED.due_day,
-           updated_at = NOW()`,
-        [
-          unit_id,
-          societyId,
-          !!maintenance_enabled,
-          maintenance_amount  ? Number(maintenance_amount)  : null,
-          maintenance_due_day ? Number(maintenance_due_day) : null,
-        ],
-      );
+    if (maintenance_enabled || maintenance_amount || maintenance_due_day || maintenance_bill_recipient) {
+      const mEnabled    = !!maintenance_enabled;
+      const mAmount     = maintenance_amount     ? Number(maintenance_amount)  : null;
+      const mDay        = maintenance_due_day    ? Number(maintenance_due_day) : null;
+      const mRecipient  = ["OWNER", "TENANT"].includes(maintenance_bill_recipient)
+        ? maintenance_bill_recipient : "OWNER";
+
+      const msEx = await dbQuery(`SELECT id FROM maintenance_settings WHERE unit_id = $1`, [unit_id]);
+      if (msEx?.rows?.length) {
+        await dbQuery(
+          `UPDATE maintenance_settings SET enabled = $1, amount = $2, due_day = $3, bill_recipient = $4, updated_at = NOW() WHERE unit_id = $5`,
+          [mEnabled, mAmount, mDay, mRecipient, unit_id],
+        );
+      } else {
+        await dbQuery(
+          `INSERT INTO maintenance_settings (unit_id, society_id, enabled, amount, due_day, bill_recipient) VALUES ($1, $2, $3, $4, $5, $6)`,
+          [unit_id, societyId, mEnabled, mAmount, mDay, mRecipient],
+        );
+      }
     }
 
     // Read back unit-level maintenance settings for the response
     const msRes = await dbQuery(
-      `SELECT enabled AS maintenance_enabled, amount AS maintenance_amount, due_day AS maintenance_due_day
+      `SELECT enabled AS maintenance_enabled, amount AS maintenance_amount,
+              due_day AS maintenance_due_day, bill_recipient AS maintenance_bill_recipient
        FROM maintenance_settings WHERE unit_id = $1`,
       [unit_id],
     );
@@ -328,11 +341,12 @@ router.post("/residents", async (req, res) => {
     return res.status(201).json({
       resident: {
         ...resident,
-        unit_number:          unitCheck.rows[0].unit_number,
-        tower_name:           unitCheck.rows[0].tower_name  || null,
-        maintenance_enabled:  ms.maintenance_enabled  ?? false,
-        maintenance_amount:   ms.maintenance_amount   ?? null,
-        maintenance_due_day:  ms.maintenance_due_day  ?? null,
+        unit_number:                   unitCheck.rows[0].unit_number,
+        tower_name:                    unitCheck.rows[0].tower_name  || null,
+        maintenance_enabled:           ms.maintenance_enabled           ?? false,
+        maintenance_amount:            ms.maintenance_amount            ?? null,
+        maintenance_due_day:           ms.maintenance_due_day           ?? null,
+        maintenance_bill_recipient:    ms.maintenance_bill_recipient    ?? "OWNER",
       },
     });
   } catch (err) {
@@ -353,11 +367,39 @@ router.patch("/residents/:id", async (req, res) => {
     maintenance_enabled,
     maintenance_amount,
     maintenance_due_day,
+    maintenance_bill_recipient,
   } = req.body || {};
 
   if (!name?.trim()) return res.status(400).json({ error: "name_required" });
 
   try {
+    // Fetch current resident first to get unit_id for conflict check
+    const currentRes = await dbQuery(
+      `SELECT id, unit_id FROM residents WHERE id = $1 AND society_id = $2`,
+      [residentId, societyId],
+    );
+    if (!currentRes?.rows?.length) return res.status(404).json({ error: "not_found" });
+    const unitId = currentRes.rows[0].unit_id;
+
+    // Check occupancy conflict BEFORE updating to return 409 instead of DB constraint error
+    if (unitId) {
+      const effectiveType  = (resident_type || "OWNER").toUpperCase();
+      if (!["OWNER", "TENANT"].includes(effectiveType)) {
+        return res.status(400).json({ error: "invalid_resident_type", message: "resident_type must be OWNER or TENANT." });
+      }
+      const effectiveLabel = effectiveType === "OWNER" ? "Owner" : "Tenant";
+      const conflict = await dbQuery(
+        `SELECT id FROM residents WHERE unit_id = $1 AND resident_type = $2 AND id <> $3 LIMIT 1`,
+        [unitId, effectiveType, residentId],
+      );
+      if (conflict?.rows?.length) {
+        return res.status(409).json({
+          error: "occupancy_conflict",
+          message: `This unit already has an ${effectiveLabel}. Remove the existing ${effectiveLabel} before reassigning.`,
+        });
+      }
+    }
+
     const result = await dbQuery(
       `UPDATE residents SET
          name              = $1,
@@ -388,21 +430,6 @@ router.patch("/residents/:id", async (req, res) => {
 
     const resident = result.rows[0];
 
-    // If resident_type changed, ensure the new type slot isn't already taken by someone else
-    if (resident_type) {
-      const normalizedType = resident_type.toUpperCase();
-      const conflict = await dbQuery(
-        `SELECT id FROM residents WHERE unit_id = $1 AND resident_type = $2 AND id <> $3 LIMIT 1`,
-        [resident.unit_id, normalizedType, residentId],
-      );
-      if (conflict?.rows?.length) {
-        return res.status(409).json({
-          error: "occupancy_conflict",
-          message: `This unit already has an ${normalizedType}. Remove the existing ${normalizedType} before reassigning.`,
-        });
-      }
-    }
-
     const unitRes = await dbQuery(
       `SELECT u.unit_number, COALESCE(td.name, tf.name) AS tower_name
        FROM units u
@@ -414,28 +441,38 @@ router.patch("/residents/:id", async (req, res) => {
     );
 
     // Upsert unit-level maintenance settings when any field is explicitly sent
-    if (maintenance_enabled !== undefined || maintenance_amount !== undefined || maintenance_due_day !== undefined) {
-      await dbQuery(
-        `INSERT INTO maintenance_settings (unit_id, society_id, enabled, amount, due_day)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (unit_id) DO UPDATE SET
-           enabled    = EXCLUDED.enabled,
-           amount     = EXCLUDED.amount,
-           due_day    = EXCLUDED.due_day,
-           updated_at = NOW()`,
-        [
-          resident.unit_id,
-          societyId,
-          !!maintenance_enabled,
-          maintenance_amount  ? Number(maintenance_amount)  : null,
-          maintenance_due_day ? Number(maintenance_due_day) : null,
-        ],
+    if (
+      resident.unit_id !== null &&
+      (maintenance_enabled !== undefined || maintenance_amount !== undefined ||
+       maintenance_due_day !== undefined || maintenance_bill_recipient !== undefined)
+    ) {
+      const mEnabled   = !!maintenance_enabled;
+      const mAmount    = maintenance_amount  ? Number(maintenance_amount)  : null;
+      const mDay       = maintenance_due_day ? Number(maintenance_due_day) : null;
+      const mRecipient = ["OWNER", "TENANT"].includes(maintenance_bill_recipient)
+        ? maintenance_bill_recipient : "OWNER";
+
+      const msExisting = await dbQuery(
+        `SELECT id FROM maintenance_settings WHERE unit_id = $1`,
+        [resident.unit_id],
       );
+      if (msExisting?.rows?.length) {
+        await dbQuery(
+          `UPDATE maintenance_settings SET enabled = $1, amount = $2, due_day = $3, bill_recipient = $4, updated_at = NOW() WHERE unit_id = $5`,
+          [mEnabled, mAmount, mDay, mRecipient, resident.unit_id],
+        );
+      } else {
+        await dbQuery(
+          `INSERT INTO maintenance_settings (unit_id, society_id, enabled, amount, due_day, bill_recipient) VALUES ($1, $2, $3, $4, $5, $6)`,
+          [resident.unit_id, societyId, mEnabled, mAmount, mDay, mRecipient],
+        );
+      }
     }
 
     // Fetch the current unit-level maintenance settings
     const msRes = await dbQuery(
-      `SELECT enabled AS maintenance_enabled, amount AS maintenance_amount, due_day AS maintenance_due_day
+      `SELECT enabled AS maintenance_enabled, amount AS maintenance_amount,
+              due_day AS maintenance_due_day, bill_recipient AS maintenance_bill_recipient
        FROM maintenance_settings WHERE unit_id = $1`,
       [resident.unit_id],
     );
@@ -444,11 +481,12 @@ router.patch("/residents/:id", async (req, res) => {
     return res.json({
       resident: {
         ...resident,
-        unit_number:         unitRes.rows[0]?.unit_number,
-        tower_name:          unitRes.rows[0]?.tower_name || null,
-        maintenance_enabled: ms.maintenance_enabled ?? false,
-        maintenance_amount:  ms.maintenance_amount  ?? null,
-        maintenance_due_day: ms.maintenance_due_day ?? null,
+        unit_number:                unitRes.rows[0]?.unit_number,
+        tower_name:                 unitRes.rows[0]?.tower_name || null,
+        maintenance_enabled:        ms.maintenance_enabled        ?? false,
+        maintenance_amount:         ms.maintenance_amount         ?? null,
+        maintenance_due_day:        ms.maintenance_due_day        ?? null,
+        maintenance_bill_recipient: ms.maintenance_bill_recipient ?? "OWNER",
       },
     });
   } catch (err) {
@@ -581,6 +619,25 @@ router.patch("/maintenance/dues/:id", async (req, res) => {
       return res.status(400).json({ error: "invalid_status" });
     }
 
+    // Reject edits on dues whose month has been formally closed
+    const dueCheck = await dbQuery(
+      `SELECT md.due_month FROM maintenance_dues md WHERE md.id = $1 AND md.society_id = $2`,
+      [id, societyId],
+    );
+    if (dueCheck?.rows?.length) {
+      const dueMonth = dueCheck.rows[0].due_month;
+      const closureCheck = await dbQuery(
+        `SELECT status FROM monthly_closures WHERE society_id = $1 AND month = $2`,
+        [societyId, dueMonth],
+      );
+      if (closureCheck?.rows?.[0]?.status === "CLOSED") {
+        return res.status(403).json({
+          error: "month_closed",
+          message: `${dueMonth} is closed. Reopen the month before making changes.`,
+        });
+      }
+    }
+
     const result = await dbQuery(
       `UPDATE maintenance_dues SET
          status            = COALESCE($1, status),
@@ -612,7 +669,7 @@ router.post("/maintenance/generate", async (req, res) => {
     const [year, mon] = targetMonth.split("-").map(Number);
 
     const settings = await dbQuery(
-      `SELECT unit_id, amount, due_day FROM maintenance_settings
+      `SELECT unit_id, amount, due_day, bill_recipient FROM maintenance_settings
        WHERE society_id = $1 AND enabled = TRUE
          AND amount IS NOT NULL AND amount > 0
          AND due_day IS NOT NULL`,
@@ -658,13 +715,14 @@ router.post("/maintenance/generate", async (req, res) => {
     let skipped = 0;
 
     for (const s of settings.rows) {
-      // Current occupant: TENANT first, else OWNER
+      // Bill based on per-unit setting; fall back to the other type if the preferred one is absent
+      const preferred   = s.bill_recipient || "OWNER";
       const occupantRes = await dbQuery(
         `SELECT id, name, phone, email FROM residents
          WHERE unit_id = $1
-         ORDER BY CASE WHEN resident_type = 'TENANT' THEN 0 ELSE 1 END
+         ORDER BY CASE WHEN resident_type = $2 THEN 0 ELSE 1 END
          LIMIT 1`,
-        [s.unit_id],
+        [s.unit_id, preferred],
       );
       const occupant = occupantRes?.rows?.[0];
       if (!occupant) { skipped++; continue; }
@@ -1046,6 +1104,426 @@ router.patch("/maintenance/config", async (req, res) => {
     return res.json({ config: result.rows[0] });
   } catch (err) {
     console.error("Secretary maintenance config error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/maintenance/invoice/:dueId/pdf ─────────────────────────
+// Downloads the maintenance bill PDF for a specific due.
+
+router.get("/maintenance/invoice/:dueId/pdf", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+    const { dueId } = req.params;
+
+    // Fetch due + resident + society data
+    const [dueRes, socRes] = await Promise.all([
+      dbQuery(
+        `SELECT md.*, r.name AS resident_name, u.unit_number,
+                COALESCE(td.name, tf.name) AS tower_name,
+                r.phone AS resident_phone
+         FROM maintenance_dues md
+         JOIN residents r ON r.id = md.resident_id
+         JOIN units u ON u.id = r.unit_id
+         LEFT JOIN towers td ON td.id = u.tower_id
+         LEFT JOIN floors f  ON f.id  = u.floor_id
+         LEFT JOIN towers tf ON tf.id = f.tower_id
+         WHERE md.id = $1 AND md.society_id = $2`,
+        [dueId, societyId],
+      ),
+      dbQuery(
+        `SELECT name, address, maintenance_upi_id, code FROM societies WHERE id = $1`,
+        [societyId],
+      ),
+    ]);
+
+    if (!dueRes?.rows?.length) return res.status(404).json({ error: "due_not_found" });
+
+    const due     = dueRes.rows[0];
+    const society = socRes.rows[0] || {};
+
+    // Get/create invoice number
+    const invoiceNumber = await getOrCreateInvoiceNumber(dueId, societyId, society.code);
+
+    // Build bill data from stored breakdown if available, otherwise compute live
+    let bill;
+    if (due.breakdown && due.base_amount !== null) {
+      const bd = typeof due.breakdown === "string" ? JSON.parse(due.breakdown) : due.breakdown;
+      const unitCount = bd.unit_count || 1;
+      const toPerUnit = (items) => (items || []).map((item) => ({
+        particulars:  item.particulars,
+        total_amount: Number(item.total_amount || 0),
+        per_unit:     Math.round((Number(item.total_amount || 0) / unitCount) * 100) / 100,
+      }));
+
+      bill = {
+        society:         { name: society.name || "", address: society.address || "" },
+        resident:        {
+          name:        due.resident_name,
+          unit_number: due.tower_name ? `${due.tower_name} · ${due.unit_number}` : due.unit_number,
+        },
+        month:           due.due_month,
+        fixed_items:     toPerUnit(bd.fixed_items),
+        variable_items:  toPerUnit(bd.variable_items),
+        fixed_total:     (bd.fixed_items || []).reduce((s, i) => s + Number(i.total_amount || 0) / unitCount, 0),
+        variable_total:  (bd.variable_items || []).reduce((s, i) => s + Number(i.total_amount || 0) / unitCount, 0),
+        base_amount:     Number(due.base_amount || 0),
+        expense_share:   Number(due.expense_share || 0),
+        previously_due:  Number(due.previously_due || 0),
+        interest_rate:   21,
+        interest_amount: Number(due.interest_amount || 0),
+        total:           Number(due.amount || 0),
+        unit_count:      unitCount,
+      };
+    } else {
+      bill = await computeBill(societyId, due.resident_id, due.due_month);
+    }
+
+    const buffer = await generateBillPdf(
+      bill,
+      due.payment_link || null,
+      society.maintenance_upi_id || null,
+      invoiceNumber,
+    );
+
+    const filename = `invoice-${invoiceNumber.replace(/\//g, "-")}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.send(buffer);
+  } catch (err) {
+    console.error("Secretary invoice PDF error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/maintenance/collection-register/pdf ────────────────────
+// Downloads the full collection register for a month as a PDF.
+
+router.get("/maintenance/collection-register/pdf", async (req, res) => {
+  try {
+    const societyId   = req.user.societyId;
+    const { month }   = req.query;
+    const targetMonth = month || new Date().toISOString().slice(0, 7);
+
+    const [duesRes, socRes, closureRes] = await Promise.all([
+      dbQuery(
+        `SELECT md.*, r.name AS resident_name, u.unit_number,
+                COALESCE(td.name, tf.name) AS tower_name
+         FROM maintenance_dues md
+         JOIN residents r ON r.id = md.resident_id
+         JOIN units u ON u.id = r.unit_id
+         LEFT JOIN towers td ON td.id = u.tower_id
+         LEFT JOIN floors f  ON f.id  = u.floor_id
+         LEFT JOIN towers tf ON tf.id = f.tower_id
+         WHERE md.society_id = $1 AND md.due_month = $2
+         ORDER BY COALESCE(td.name, tf.name) NULLS LAST, u.unit_number, r.name`,
+        [societyId, targetMonth],
+      ),
+      dbQuery(`SELECT name, address, code FROM societies WHERE id = $1`, [societyId]),
+      dbQuery(`SELECT status FROM monthly_closures WHERE society_id = $1 AND month = $2`, [societyId, targetMonth]),
+    ]);
+
+    const dues    = duesRes?.rows || [];
+    const society = socRes?.rows?.[0] || {};
+    const closureStatus = closureRes?.rows?.[0]?.status || "OPEN";
+
+    const stats = {
+      totalAmount:     dues.reduce((s, d) => s + Number(d.amount || 0), 0),
+      collectedAmount: dues.filter((d) => d.status === "PAID").reduce((s, d) => s + Number(d.amount || 0), 0),
+      pending:         dues.filter((d) => d.status === "PENDING").length,
+      overdue:         dues.filter((d) => d.status === "OVERDUE").length,
+      waived:          dues.filter((d) => d.status === "WAIVED").length,
+    };
+
+    const buffer = await generateCollectionRegisterPdf(dues, stats, society, targetMonth, closureStatus);
+
+    const filename = `collection-register-${targetMonth}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.send(buffer);
+  } catch (err) {
+    console.error("Secretary collection register PDF error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/maintenance/closure/:month ─────────────────────────────
+// Returns the closure record for a month, or { status: 'OPEN' } if not closed.
+
+router.get("/maintenance/closure/:month", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+    const { month } = req.params;
+
+    const result = await dbQuery(
+      `SELECT mc.*, aa.username AS closed_by_username
+       FROM monthly_closures mc
+       LEFT JOIN auth_accounts aa ON aa.id = mc.closed_by
+       WHERE mc.society_id = $1 AND mc.month = $2`,
+      [societyId, month],
+    );
+
+    if (!result?.rows?.length) {
+      return res.json({ status: "OPEN", month });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Secretary get closure error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/secretary/maintenance/close-month ───────────────────────────────
+// Closes the books for a month: flips PENDING → OVERDUE, computes totals, locks.
+
+router.post("/maintenance/close-month", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+    const { month, notes } = req.body || {};
+    if (!month) return res.status(400).json({ error: "month_required" });
+
+    // Idempotency — already closed?
+    const existing = await dbQuery(
+      `SELECT id, status FROM monthly_closures WHERE society_id = $1 AND month = $2`,
+      [societyId, month],
+    );
+    if (existing?.rows?.[0]?.status === "CLOSED") {
+      return res.status(409).json({ error: "already_closed", message: `${month} is already closed.` });
+    }
+
+    // Flip all PENDING dues to OVERDUE for this month
+    await dbQuery(
+      `UPDATE maintenance_dues SET status = 'OVERDUE', updated_at = NOW()
+       WHERE society_id = $1 AND due_month = $2 AND status = 'PENDING'`,
+      [societyId, month],
+    );
+
+    // Compute collection totals
+    const totalsRes = await dbQuery(
+      `SELECT
+         COUNT(*)                                                         AS total_dues,
+         COALESCE(SUM(amount), 0)                                        AS total_billed,
+         COALESCE(SUM(amount) FILTER (WHERE status = 'PAID'),   0)       AS total_collected,
+         COALESCE(SUM(amount) FILTER (WHERE status = 'WAIVED'), 0)       AS total_waived,
+         COALESCE(SUM(amount) FILTER (WHERE status = 'OVERDUE'),0)       AS total_overdue
+       FROM maintenance_dues
+       WHERE society_id = $1 AND due_month = $2`,
+      [societyId, month],
+    );
+    const t = totalsRes?.rows?.[0] || {};
+
+    // Compute total expenses from expense sheet
+    const sheetRes = await dbQuery(
+      `SELECT fixed_items, variable_items FROM maintenance_expense_sheets
+       WHERE society_id = $1 AND month = $2`,
+      [societyId, month],
+    );
+    const sheet = sheetRes?.rows?.[0];
+    const allItems = [...(sheet?.fixed_items || []), ...(sheet?.variable_items || [])];
+    const totalExpenses = allItems.reduce((s, i) => s + Number(i.total_amount || 0), 0);
+
+    const totalCollected = Number(t.total_collected || 0);
+    const surplusDeficit = Math.round((totalCollected - totalExpenses) * 100) / 100;
+
+    // Upsert the closure record
+    const closureRes = await dbQuery(
+      `INSERT INTO monthly_closures
+         (society_id, month, status, total_dues, total_billed, total_collected,
+          total_waived, total_overdue, total_expenses, surplus_deficit,
+          closed_by, closed_at, notes, updated_at)
+       VALUES ($1, $2, 'CLOSED', $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, NOW())
+       ON CONFLICT (society_id, month) DO UPDATE SET
+         status          = 'CLOSED',
+         total_dues      = EXCLUDED.total_dues,
+         total_billed    = EXCLUDED.total_billed,
+         total_collected = EXCLUDED.total_collected,
+         total_waived    = EXCLUDED.total_waived,
+         total_overdue   = EXCLUDED.total_overdue,
+         total_expenses  = EXCLUDED.total_expenses,
+         surplus_deficit = EXCLUDED.surplus_deficit,
+         closed_by       = EXCLUDED.closed_by,
+         closed_at       = EXCLUDED.closed_at,
+         notes           = COALESCE(EXCLUDED.notes, monthly_closures.notes),
+         updated_at      = NOW()
+       RETURNING *`,
+      [
+        societyId, month,
+        Number(t.total_dues      || 0),
+        Number(t.total_billed    || 0),
+        totalCollected,
+        Number(t.total_waived    || 0),
+        Number(t.total_overdue   || 0),
+        Math.round(totalExpenses * 100) / 100,
+        surplusDeficit,
+        req.user.id,
+        notes || null,
+      ],
+    );
+
+    return res.json({ closure: closureRes.rows[0] });
+  } catch (err) {
+    console.error("Secretary close-month error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/secretary/maintenance/reopen-month ──────────────────────────────
+// Reopens a closed month (requires a reason for audit trail).
+
+router.post("/maintenance/reopen-month", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+    const { month, reason } = req.body || {};
+    if (!month)  return res.status(400).json({ error: "month_required" });
+    if (!reason) return res.status(400).json({ error: "reason_required" });
+
+    const result = await dbQuery(
+      `UPDATE monthly_closures
+       SET status        = 'OPEN',
+           reopened_by   = $1,
+           reopened_at   = NOW(),
+           reopen_reason = $2,
+           updated_at    = NOW()
+       WHERE society_id = $3 AND month = $4 AND status = 'CLOSED'
+       RETURNING *`,
+      [req.user.id, reason, societyId, month],
+    );
+
+    if (!result?.rows?.length) {
+      return res.status(404).json({ error: "not_found_or_not_closed" });
+    }
+
+    return res.json({ closure: result.rows[0] });
+  } catch (err) {
+    console.error("Secretary reopen-month error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/maintenance/closure/:month/pdf ─────────────────────────
+// Downloads the closure summary PDF (must be a closed month).
+
+router.get("/maintenance/closure/:month/pdf", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+    const { month } = req.params;
+
+    const [closureRes, sheetRes, socRes] = await Promise.all([
+      dbQuery(
+        `SELECT mc.*, aa.username AS closed_by_username
+         FROM monthly_closures mc
+         LEFT JOIN auth_accounts aa ON aa.id = mc.closed_by
+         WHERE mc.society_id = $1 AND mc.month = $2`,
+        [societyId, month],
+      ),
+      dbQuery(
+        `SELECT fixed_items, variable_items FROM maintenance_expense_sheets
+         WHERE society_id = $1 AND month = $2`,
+        [societyId, month],
+      ),
+      dbQuery(`SELECT name, address FROM societies WHERE id = $1`, [societyId]),
+    ]);
+
+    if (!closureRes?.rows?.length) {
+      return res.status(404).json({ error: "closure_not_found", message: "Close the month first." });
+    }
+
+    const closure     = closureRes.rows[0];
+    const expenseSheet = sheetRes?.rows?.[0] || null;
+    const society     = socRes?.rows?.[0]    || {};
+
+    const buffer = await generateClosurePdf(closure, expenseSheet, society);
+    const filename = `closure-${month}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.send(buffer);
+  } catch (err) {
+    console.error("Secretary closure PDF error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/maintenance/tally ──────────────────────────────────────
+// Monthly account tally — one row per month with dues stats + closure status.
+
+router.get("/maintenance/tally", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+    const { year }  = req.query;
+
+    let monthFilter = "";
+    const params = [societyId];
+    if (year && /^\d{4}$/.test(year)) {
+      params.push(`${year}-%`);
+      monthFilter = ` AND md.due_month LIKE $${params.length}`;
+    }
+
+    // Aggregate dues per month
+    const duesRes = await dbQuery(
+      `SELECT
+         md.due_month                                                     AS month,
+         COUNT(*)                                                         AS total_dues,
+         COALESCE(SUM(md.amount), 0)                                      AS total_billed,
+         COALESCE(SUM(md.amount) FILTER (WHERE md.status = 'PAID'),   0) AS total_collected,
+         COALESCE(SUM(md.amount) FILTER (WHERE md.status = 'WAIVED'), 0) AS total_waived,
+         COALESCE(SUM(md.amount) FILTER (WHERE md.status = 'OVERDUE'),0) AS total_overdue
+       FROM maintenance_dues md
+       WHERE md.society_id = $1${monthFilter}
+       GROUP BY md.due_month
+       ORDER BY md.due_month DESC`,
+      params,
+    );
+
+    const months = duesRes?.rows || [];
+
+    // Fetch closures for these months
+    const monthList = months.map((m) => m.month);
+    let closureMap  = {};
+    if (monthList.length) {
+      const placeholders = monthList.map((_, i) => `$${i + 2}`).join(", ");
+      const closuresRes  = await dbQuery(
+        `SELECT month, status, total_expenses, surplus_deficit, closed_at
+         FROM monthly_closures
+         WHERE society_id = $1 AND month IN (${placeholders})`,
+        [societyId, ...monthList],
+      );
+      (closuresRes?.rows || []).forEach((c) => { closureMap[c.month] = c; });
+    }
+
+    // Merge — for open months, compute expenses live from expense sheet
+    const expenseRes = await dbQuery(
+      `SELECT month,
+              (SELECT COALESCE(SUM(val->>'total_amount'), 0)::NUMERIC
+               FROM jsonb_array_elements(fixed_items || variable_items) AS val) AS total_expenses
+       FROM maintenance_expense_sheets
+       WHERE society_id = $1${year ? ` AND month LIKE '${year}-%'` : ""}`,
+      [societyId],
+    );
+    const expenseMap = {};
+    (expenseRes?.rows || []).forEach((e) => { expenseMap[e.month] = Number(e.total_expenses || 0); });
+
+    const tally = months.map((m) => {
+      const closure  = closureMap[m.month];
+      const expenses = closure ? Number(closure.total_expenses || 0) : (expenseMap[m.month] || 0);
+      const collected = Number(m.total_collected || 0);
+      return {
+        month:          m.month,
+        total_dues:     Number(m.total_dues      || 0),
+        total_billed:   Number(m.total_billed    || 0),
+        total_collected: collected,
+        total_waived:   Number(m.total_waived    || 0),
+        total_overdue:  Number(m.total_overdue   || 0),
+        total_expenses: expenses,
+        surplus_deficit: Math.round((collected - expenses) * 100) / 100,
+        status:         closure?.status || "OPEN",
+        closed_at:      closure?.closed_at || null,
+      };
+    });
+
+    return res.json({ tally });
+  } catch (err) {
+    console.error("Secretary tally error:", err);
     return res.status(500).json({ error: "internal_error" });
   }
 });

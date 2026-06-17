@@ -32,6 +32,43 @@ export function computeUpdatedStats(dues) {
   };
 }
 
+// ── Expense sheet helpers ─────────────────────────────────────────────────────
+
+export function perUnit(totalAmount, count) {
+  if (!count || !Number(totalAmount)) return 0;
+  return Number(totalAmount) / count;
+}
+
+export function toApiItems(items) {
+  return items.map((i) => ({ particulars: i.particulars, total_amount: Number(i.total_amount) || 0 }));
+}
+
+export function toFormItems(raw, defaults) {
+  return (raw?.length ? raw : defaults).map((i) => ({
+    particulars:  i.particulars,
+    total_amount: i.total_amount ? String(i.total_amount) : "",
+  }));
+}
+
+export function buildSheetPayload(month, fixedItems, variableItems, interestRate) {
+  return {
+    month,
+    fixed_items:    toApiItems(fixedItems),
+    variable_items: toApiItems(variableItems),
+    interest_rate:  Number(interestRate) || 21,
+  };
+}
+
+// ── useItemList — manages an editable list of expense rows ────────────────────
+
+export function useItemList(initialItems) {
+  const [items, setItems] = useState(initialItems);
+  const setItem    = (idx, field, val) => setItems((p) => p.map((it, i) => i === idx ? { ...it, [field]: val } : it));
+  const removeItem = (idx) => setItems((p) => p.filter((_, i) => i !== idx));
+  const addItem    = () => setItems((p) => [...p, { particulars: "", total_amount: "" }]);
+  return [items, setItems, setItem, removeItem, addItem];
+}
+
 // ── Primitive components ──────────────────────────────────────────────────────
 
 function StatusBadge({ status }) {
@@ -88,13 +125,21 @@ function PayLinkBtn({ url }) {
   );
 }
 
-function DueRow({ due, onUpdate }) {
-  const [paymentRef, setPaymentRef] = useState(due.payment_reference || "");
-  const [saving,     setSaving]     = useState(false);
+function DueRow({ due, onUpdate, onDownloadPdf }) {
+  const [paymentRef,    setPaymentRef]    = useState(due.payment_reference || "");
+  const [saving,        setSaving]        = useState(false);
+  const [downloading,   setDownloading]   = useState(false);
 
   useEffect(() => {
     setPaymentRef(due.payment_reference || "");
   }, [due.id, due.payment_reference]);
+
+  const downloadPdf = async () => {
+    if (!onDownloadPdf) return;
+    setDownloading(true);
+    try { await onDownloadPdf(due); }
+    finally { setDownloading(false); }
+  };
 
   const markPaid = async () => {
     setSaving(true);
@@ -170,6 +215,16 @@ function DueRow({ due, onUpdate }) {
             {saving ? "…" : "Undo"}
           </button>
         )}
+        {onDownloadPdf && (
+          <button
+            className="maint-btn-pdf"
+            onClick={downloadPdf}
+            disabled={downloading}
+            title="Download PDF invoice"
+          >
+            {downloading ? "…" : <Icon iconName="PDF" />}
+          </button>
+        )}
       </td>
     </tr>
   );
@@ -190,7 +245,7 @@ export function StatsGrid({ stats }) {
   );
 }
 
-export function DuesTable({ loading, dues, emptyMsg, onUpdate }) {
+export function DuesTable({ loading, dues, emptyMsg, onUpdate, onDownloadPdf }) {
   return (
     <div className="maint-card">
       {loading ? (
@@ -210,7 +265,7 @@ export function DuesTable({ loading, dues, emptyMsg, onUpdate }) {
           </thead>
           <tbody>
             {dues.map((due) => (
-              <DueRow key={due.id} due={due} onUpdate={onUpdate} />
+              <DueRow key={due.id} due={due} onUpdate={onUpdate} onDownloadPdf={onDownloadPdf} />
             ))}
           </tbody>
         </table>

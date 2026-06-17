@@ -20,6 +20,9 @@ pnpm-debug.log*
 # Vite cache
 .vite/
 
+# Generated PDF artifacts (downloaded invoices, registers, closures)
+public/*.pdf
+
 # Editor/OS files
 .DS_Store
 .vscode/
