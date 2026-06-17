@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { Stack, Text } from "@fluentui/react";
-import { ticketStatuses } from "../constants.js";
-import { cardTones } from "../styles/cssConstants.js";
+import { ticketStatuses } from "../../constants.js";
+import { cardTones } from "../../styles/cssConstants.js";
 
 function getCardStyles(tone) {
   return {

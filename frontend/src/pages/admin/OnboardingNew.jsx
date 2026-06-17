@@ -7,9 +7,9 @@ import {
   Dialog, DialogType, DialogFooter,
 } from "@fluentui/react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { api } from "../services/api.js";
-import { T } from "../styles/typography.js";
-import { validatePhone, validateEmail } from "../utils/validation.js";
+import { api } from "../../services/api.js";
+import { T } from "../../styles/typography.js";
+import { validatePhone, validateEmail } from "../../utils/validation.js";
 import {
   INPUT_STYLES, PRIMARY_BTN,
   // Stepper
@@ -44,18 +44,18 @@ import {
   CHANGE_FILE_BTN, CONFIRM_IMPORT_BTN, PARSED_COUNT,
   // Success screen
   SUCCESS_OUTER, BUILDING_ID_LABEL, BUILDING_ID_VALUE, STAT_VALUE,
-} from "../styles/onboardingNewStyles.js";
-import { CredentialsBox } from "../components/onboarding/CredentialsBox.jsx";
-import "../styles/onboardingNew.css";
+} from "../../styles/onboardingNewStyles.js";
+import { CredentialsBox } from "../../components/onboarding/CredentialsBox.jsx";
+import "../../styles/onboardingNew.css";
 import {
   SOCIETY_TYPES, STEPS, BUILDING_FORM_DEFAULTS,
   XLSX_TABLE_KEYS, XLSX_TABLE_HEADERS,
   BHK_OPTIONS, CONTACT_OPTIONS,
   buildDefaultFloors, initTowers,
   parseXlsx, generateTemplateXlsx, countTotalUnits,
-} from "../utils/onboardingUtils.js";
-import { AddResidentModal }      from "../components/onboarding/AddResidentModal.jsx";
-import { StructurePreviewModal } from "../components/onboarding/StructurePreviewModal.jsx";
+} from "../../utils/onboardingUtils.js";
+import { AddResidentModal }      from "../../components/onboarding/AddResidentModal.jsx";
+import { StructurePreviewModal } from "../../components/onboarding/StructurePreviewModal.jsx";
 
 // Merges T.pageSubtitle with centred/max-width overrides — kept here because it
 // references T which is a local import, not a style-file concern.
@@ -707,7 +707,7 @@ function EditCell({ fieldKey, value, onChange, towers, error, rowData = {} }) {
 
 // ─── Step 3: Residents ────────────────────────────────────────────────────────
 
-function Step3({ towers, residents, setResidents, onBack, onFinish, loading, error }) {
+function Step3({ societyId, towers, residents, setResidents, onBack, onFinish, loading, error }) {
   const [importMode,       setImportMode      ] = useState("manual");
   const [csvPreview,       setCsvPreview      ] = useState(null);
   const [showAllPreview,   setShowAllPreview  ] = useState(false);
@@ -719,6 +719,43 @@ function Step3({ towers, residents, setResidents, onBack, onFinish, loading, err
   const [addModalPreset,   setAddModalPreset  ] = useState(null);
   const [editResident,     setEditResident    ] = useState(null);
   const fileRef = useRef();
+
+  // Guard credentials state
+  const [guardUsername,    setGuardUsername  ] = useState("");
+  const [guardPassword,    setGuardPassword  ] = useState("");
+  const [guardConfirm,     setGuardConfirm  ] = useState("");
+  const [guardLoading,     setGuardLoading  ] = useState(false);
+  const [guardError,       setGuardError    ] = useState(null);
+  const [guardSaved,       setGuardSaved    ] = useState(false);
+  const [existingGuard,    setExistingGuard ] = useState(null); // { exists, username }
+
+  useEffect(() => {
+    if (!societyId) return;
+    api.onboarding.getGuardAccount(societyId)
+      .then((d) => {
+        setExistingGuard(d);
+        if (d.exists && d.username) setGuardUsername(d.username);
+      })
+      .catch(() => {});
+  }, [societyId]);
+
+  const handleSaveGuard = async (e) => {
+    e.preventDefault();
+    if (!guardUsername.trim()) { setGuardError("Username is required."); return; }
+    if (guardPassword.length < 6) { setGuardError("Password must be at least 6 characters."); return; }
+    if (guardPassword !== guardConfirm) { setGuardError("Passwords do not match."); return; }
+    setGuardLoading(true); setGuardError(null); setGuardSaved(false);
+    try {
+      await api.onboarding.setGuardAccount(societyId, { username: guardUsername.trim(), password: guardPassword });
+      setGuardSaved(true);
+      setGuardPassword(""); setGuardConfirm("");
+      setExistingGuard({ exists: true, username: guardUsername.trim() });
+    } catch (err) {
+      setGuardError(err.code === "username_taken" ? "That username is already taken. Choose another." : "Failed to save guard account.");
+    } finally {
+      setGuardLoading(false);
+    }
+  };
 
   const startEditPreview  = (idx) => {
     setEditPreviewIdx(idx);
@@ -1174,6 +1211,68 @@ function Step3({ towers, residents, setResidents, onBack, onFinish, loading, err
           </MessageBar>
         )}
 
+        {/* ── Guard Portal Setup ─────────────────────────────────────────── */}
+        <Stack tokens={{ childrenGap: 10 }} styles={{ root: { background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "16px 20px", marginTop: 8 } }}>
+          <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
+            <Icon iconName="Shield" styles={{ root: { color: "#0ea5e9", fontSize: 16 } }} />
+            <Text styles={T.sectionHeader}>Guard Portal Setup</Text>
+            {existingGuard?.exists && (
+              <span style={{ background: "#dcfce7", color: "#15803d", borderRadius: 10, padding: "2px 10px", fontSize: 11, fontWeight: 600 }}>Configured</span>
+            )}
+          </Stack>
+          <Text styles={T.caption}>
+            {existingGuard?.exists
+              ? `Guard account "${existingGuard.username}" is set up. Update credentials below if needed.`
+              : "Create a login for the security guard at the gate. They will use this to verify visitor passes."}
+          </Text>
+          <form onSubmit={handleSaveGuard}>
+            <Stack tokens={{ childrenGap: 10 }}>
+              <Stack horizontal tokens={{ childrenGap: 12 }} wrap>
+                <Stack.Item grow={1} styles={{ root: { minWidth: 180 } }}>
+                  <TextField
+                    label="Guard Username"
+                    placeholder="e.g. guard_sunrise"
+                    value={guardUsername}
+                    onChange={(_, v) => { setGuardUsername(v || ""); setGuardSaved(false); }}
+                    autoComplete="off"
+                  />
+                </Stack.Item>
+                <Stack.Item grow={1} styles={{ root: { minWidth: 150 } }}>
+                  <TextField
+                    label="Password"
+                    type="password"
+                    placeholder="Min. 6 characters"
+                    value={guardPassword}
+                    onChange={(_, v) => { setGuardPassword(v || ""); setGuardSaved(false); }}
+                    autoComplete="new-password"
+                  />
+                </Stack.Item>
+                <Stack.Item grow={1} styles={{ root: { minWidth: 150 } }}>
+                  <TextField
+                    label="Confirm Password"
+                    type="password"
+                    placeholder="Re-enter password"
+                    value={guardConfirm}
+                    onChange={(_, v) => { setGuardConfirm(v || ""); setGuardSaved(false); }}
+                    autoComplete="new-password"
+                    errorMessage={guardConfirm && guardPassword !== guardConfirm ? "Passwords do not match" : ""}
+                  />
+                </Stack.Item>
+              </Stack>
+              {guardError && <MessageBar messageBarType={MessageBarType.error}>{guardError}</MessageBar>}
+              {guardSaved && <MessageBar messageBarType={MessageBarType.success}>Guard account saved successfully.</MessageBar>}
+              <Stack horizontal>
+                <DefaultButton
+                  type="submit"
+                  text={guardLoading ? "Saving…" : existingGuard?.exists ? "Update Guard Account" : "Save Guard Account"}
+                  iconProps={{ iconName: "Shield" }}
+                  disabled={guardLoading || !guardUsername.trim() || !guardPassword || guardPassword !== guardConfirm}
+                />
+              </Stack>
+            </Stack>
+          </form>
+        </Stack>
+
         <Stack
           horizontal verticalAlign="center" horizontalAlign="space-between"
           styles={STEP_FOOTER}
@@ -1550,7 +1649,7 @@ export function OnboardingNewPage() {
               <Step2 towers={towers} setTowers={setTowers} onBack={() => setCurrentStep(0)} onNext={handleStep2Next} loading={loading} error={error} />
             )}
             {currentStep === 2 && (
-              <Step3 towers={towers} residents={residents} setResidents={setResidents} onBack={() => setCurrentStep(1)} onFinish={handleFinish} loading={loading} error={error} />
+              <Step3 societyId={societyId} towers={towers} residents={residents} setResidents={setResidents} onBack={() => setCurrentStep(1)} onFinish={handleFinish} loading={loading} error={error} />
             )}
           </Stack>
         </>

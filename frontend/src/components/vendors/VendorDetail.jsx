@@ -5,11 +5,11 @@ import {
   Pivot, PivotItem, Dropdown, Checkbox,
 } from "@fluentui/react";
 import VendorDocuments from "./VendorDocuments.jsx";
-import { T } from "../styles/typography.js";
-import { StatusBadge } from "../utils/helperFunctions.tsx";
-import { VENDOR_CATEGORY_OPTIONS } from "../constants.js";
-import { api } from "../services/api.js";
-import "../styles/Vendor.css";
+import { T } from "../../styles/typography.js";
+import { StatusBadge } from "../../utils/helperFunctions.tsx";
+import { VENDOR_CATEGORY_OPTIONS } from "../../constants.js";
+import { api } from "../../services/api.js";
+import "../../styles/Vendor.css";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

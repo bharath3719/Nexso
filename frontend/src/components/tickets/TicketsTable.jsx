@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ConstrainMode, DetailsList, DetailsListLayoutMode, Dropdown, IconButton, PrimaryButton, SelectionMode, Spinner, SpinnerSize, Stack, Text, TextField } from "@fluentui/react";
-import { ticketStatuses } from "../constants.js";
-import { formatDate } from "../utils/formatDate.js";
-import { listStyles } from "../theme.js";
-import { useTableSort, baseGetValue } from "../hooks/useTableSort.js";
-import "../styles/TicketsTable.css";
+import { ticketStatuses } from "../../constants.js";
+import { formatDate } from "../../utils/formatDate.js";
+import { listStyles } from "../../theme.js";
+import { useTableSort, baseGetValue } from "../../hooks/useTableSort.js";
+import "../../styles/TicketsTable.css";
 
 function filterTickets(items, statusFilter, text) {
   return items

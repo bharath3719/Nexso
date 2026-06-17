@@ -3,14 +3,14 @@ import {
   Dropdown, IconButton, MessageBar, MessageBarType,
   Modal, PrimaryButton, DefaultButton, Stack, Text,
 } from "@fluentui/react";
-import { useJsonData } from "../hooks/useJsonData.js";
-import { TicketsTable } from "../components/TicketsTable.jsx";
-import { PageHeader } from "../components/PageHeader.jsx";
-import { T } from "../styles/typography.js";
-import { ticketStatuses } from "../constants.js";
-import { formatDate } from "../utils/formatDate.js";
-import { api } from "../services/api.js";
-import "../styles/Complaints.css";
+import { useJsonData } from "../../hooks/useJsonData.js";
+import { TicketsTable } from "../../components/tickets/TicketsTable.jsx";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
+import { T } from "../../styles/typography.js";
+import { ticketStatuses } from "../../constants.js";
+import { formatDate } from "../../utils/formatDate.js";
+import { api } from "../../services/api.js";
+import "../../styles/Complaints.css";
 
 // Fluent pseudo-state styles for the white close button can't live in a plain
 // CSS file (rootHovered / rootPressed are Fluent-specific slots), so they're

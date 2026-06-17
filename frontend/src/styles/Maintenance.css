@@ -812,3 +812,118 @@
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ─── PDF download button (per-row + tally) ──────────────────────────────────── */
+
+.maint-btn-pdf {
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #64748b;
+  transition: background 150ms, color 150ms, border-color 150ms;
+  margin-top: 4px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.maint-btn-pdf:hover {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+.maint-btn-pdf:disabled { opacity: 0.5; cursor: default; }
+
+/* ─── Month closure status pill ──────────────────────────────────────────────── */
+
+.maint-closure-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.maint-closure-pill--open {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+}
+
+.maint-closure-pill--closed {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+}
+
+/* ─── Closed month banner ────────────────────────────────────────────────────── */
+
+.maint-closed-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #991b1b;
+}
+
+.maint-closed-banner__reopen {
+  background: none;
+  border: none;
+  color: #2563eb;
+  cursor: pointer;
+  font-size: 13px;
+  text-decoration: underline;
+  padding: 0;
+}
+.maint-closed-banner__reopen:hover { color: #1d4ed8; }
+
+.maint-closed-banner__pdf {
+  display: inline-flex;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #fca5a5;
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #dc2626;
+  cursor: pointer;
+  margin-left: auto;
+  gap: 4px;
+  transition: background 150ms;
+}
+.maint-closed-banner__pdf:hover { background: #fef2f2; }
+
+/* ─── Account Tally tab ──────────────────────────────────────────────────────── */
+
+.maint-tally {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.maint-tally-table tfoot tr td {
+  padding-top: 12px;
+  border-top: 2px solid #e2e8f0;
+}
+
+.maint-badge--closed {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.maint-badge--open {
+  background: #f0fdf4;
+  color: #16a34a;
+}

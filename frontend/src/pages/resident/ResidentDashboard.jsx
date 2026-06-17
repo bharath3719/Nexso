@@ -1,7 +1,7 @@
 import React from "react";
 import { Text, Spinner } from "@fluentui/react";
 import { useNavigate } from "react-router-dom";
-import { PageHeader } from "../../components/PageHeader.jsx";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
 import { api } from "../../services/api.js";
 import "../../styles/ResidentLayout.css";
 
@@ -39,19 +39,22 @@ export function ResidentDashboard({ unitNumber, societyName, residentName }) {
   const navigate = useNavigate();
   const [announcements, setAnnouncements] = React.useState([]);
   const [passes, setPasses]               = React.useState([]);
+  const [dues,   setDues]                 = React.useState([]);
   const [loading, setLoading]             = React.useState(true);
 
   React.useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const [ann, vp] = await Promise.all([
+        const [ann, vp, billing] = await Promise.all([
           api.resident.announcements().catch(() => ({ announcements: [] })),
           api.resident.visitorPasses.list({ status: "ACTIVE" }).catch(() => ({ passes: [] })),
+          api.resident.maintenance.dues("pending").catch(() => ({ dues: [] })),
         ]);
         if (!cancelled) {
           setAnnouncements(ann.announcements || []);
           setPasses(vp.passes || []);
+          setDues(billing.dues || []);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -62,7 +65,9 @@ export function ResidentDashboard({ unitNumber, societyName, residentName }) {
   }, []);
 
   const urgentAnnouncements = announcements.filter((a) => a.priority === "URGENT" || a.pinned);
-  const activePasses         = passes.length;
+  const activePasses        = passes.length;
+  const overdueDues         = dues.filter((d) => d.status === "OVERDUE").length;
+  const pendingDues         = dues.filter((d) => d.status === "PENDING").length;
 
   return (
     <div className="res-page">
@@ -82,6 +87,13 @@ export function ResidentDashboard({ unitNumber, societyName, residentName }) {
               onClick={() => navigate("/resident/announcements")} />
             <StatCard icon="🎫" label="Active Visitor Passes" value={activePasses} color="#dcfce7"
               onClick={() => navigate("/resident/visitor-passes")} />
+            <StatCard
+              icon={overdueDues > 0 ? "⚠️" : "💰"}
+              label={overdueDues > 0 ? "Overdue Dues" : "Pending Dues"}
+              value={overdueDues > 0 ? overdueDues : pendingDues}
+              color={overdueDues > 0 ? "#fee2e2" : "#fef9c3"}
+              onClick={() => navigate("/resident/billing")}
+            />
           </div>
 
           {urgentAnnouncements.length > 0 && (
@@ -111,8 +123,9 @@ export function ResidentDashboard({ unitNumber, societyName, residentName }) {
 
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {[
-              { label: "📢  View Announcements", path: "/resident/announcements" },
-              { label: "🎫  Create Visitor Pass", path: "/resident/visitor-passes" },
+              { label: "💰  My Payments",        path: "/resident/billing"          },
+              { label: "📢  View Announcements", path: "/resident/announcements"    },
+              { label: "🎫  Create Visitor Pass", path: "/resident/visitor-passes"  },
             ].map(({ label, path }) => (
               <button
                 key={path}

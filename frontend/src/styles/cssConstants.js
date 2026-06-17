@@ -99,6 +99,14 @@ export const SOCIETY_TYPE_COLORS = {
   MIXED_USE:       { bg: "#fdf4ff", text: "#7e22ce", border: "#e9d5ff" },
 };
 
+// ─── Announcement priority colours ───────────────────────────────────────────
+// bg / color are runtime-looked-up → must stay inline; defined here as the
+// single source of truth.
+export const ANNOUNCEMENT_PRIORITY_COLORS = {
+  URGENT: { bg: "#fee2e2", color: "#991b1b" },
+  NORMAL: { bg: "#f1f5f9", color: "#475569" },
+};
+
 // ─── Tower gradients ──────────────────────────────────────────────────────────
 // Cycled by index to colour tower cards in SocietyDetailPage.
 // Each entry is [startColour, endColour].

@@ -15,14 +15,14 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { Spinner, Dropdown } from "@fluentui/react";
-import { PageHeader } from "../components/PageHeader.jsx";
-import { api } from "../services/api.js";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
+import { api } from "../../services/api.js";
 import {
   currentMonth, Toast, StatsGrid, DuesTable,
   useShowToast, ErrorBanner, MonthInput, StatusFilterSelect, MaintenanceConfigBar,
   GenerateDuesButtons, updateDue,
-} from "../components/MaintenanceShared.jsx";
-import "../styles/Maintenance.css";
+} from "../../components/maintenance/MaintenanceShared.jsx";
+import "../../styles/Maintenance.css";
 
 // ── Main component ────────────────────────────────────────────────────────────
 

@@ -1,8 +1,8 @@
 import React from "react";
-import nexsoLogo from "../assets/logo.png";
+import nexsoLogo from "../../assets/logo.png";
 import { useShellState, ShellSidebar, SignOutButton } from "./LayoutShared.jsx";
-import { api } from "../services/api.js";
-import "../styles/Layout.css";
+import { api } from "../../services/api.js";
+import "../../styles/Layout.css";
 
 export function Layout({ navLinks, children, onLogout }) {
   const { collapsed, setCollapsed, headerRef, selectedKey, cssVars, navigate } = useShellState(navLinks, "/");

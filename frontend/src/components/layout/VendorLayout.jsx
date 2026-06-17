@@ -1,10 +1,10 @@
 import React from "react";
 import { IconButton, Text } from "@fluentui/react";
-import nexsoLogo from "../assets/logo.png";
-import { api } from "../services/api.js";
+import nexsoLogo from "../../assets/logo.png";
+import { api } from "../../services/api.js";
 import { useShellState, ShellSidebar, SignOutButton } from "./LayoutShared.jsx";
-import "../styles/Layout.css";
-import "../styles/VendorLayout.css";
+import "../../styles/Layout.css";
+import "../../styles/VendorLayout.css";
 
 const vendorNavLinks = [
   { name: "Dashboard", key: "vnd-dashboard", path: "/vendor",         iconProps: { iconName: "Home"    } },

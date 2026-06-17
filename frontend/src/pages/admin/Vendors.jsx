@@ -4,14 +4,14 @@ import {
   DetailsList, DetailsListLayoutMode, ConstrainMode, CheckboxVisibility,
   MessageBar, MessageBarType, Modal, TextField, Checkbox, TooltipHost,
 } from "@fluentui/react";
-import VendorDetail from "../components/VendorDetail.jsx";
-import { T } from "../styles/typography.js";
-import { listStyles } from "../theme.js";
-import { StatusBadge } from "../utils/helperFunctions.tsx";
-import { VENDOR_CATEGORY_OPTIONS, VENDOR_STATUS_FILTER_OPTIONS } from "../constants.js";
-import { api } from "../services/api.js";
-import { validatePhone, validateEmail, validateWhatsApp } from "../utils/validation.js";
-import "../styles/Vendor.css";
+import VendorDetail from "../../components/vendors/VendorDetail.jsx";
+import { T } from "../../styles/typography.js";
+import { listStyles } from "../../theme.js";
+import { StatusBadge } from "../../utils/helperFunctions.tsx";
+import { VENDOR_CATEGORY_OPTIONS, VENDOR_STATUS_FILTER_OPTIONS } from "../../constants.js";
+import { api } from "../../services/api.js";
+import { validatePhone, validateEmail, validateWhatsApp } from "../../utils/validation.js";
+import "../../styles/Vendor.css";
 
 // ─── CredentialsBanner ────────────────────────────────────────────────────────
 // Shown inside the modal after a vendor is created with a login account.

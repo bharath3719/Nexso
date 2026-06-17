@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import { IconButton, MessageBar, MessageBarType, Stack } from "@fluentui/react";
-import { useJsonData } from "../hooks/useJsonData.js";
-import { UsersTable } from "../components/UsersTable.jsx";
-import { PageHeader } from "../components/PageHeader.jsx";
-import { filterIconButtonStyles } from "../theme.js";
+import { useJsonData } from "../../hooks/useJsonData.js";
+import { UsersTable } from "../../components/shared/UsersTable.jsx";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
+import { filterIconButtonStyles } from "../../theme.js";
 
 export function UsersPage() {
   const { loading, data, error } = useJsonData('/api/users?limit=200');

@@ -5,12 +5,12 @@ import {
   Icon, ProgressIndicator,
 } from "@fluentui/react";
 import { useNavigate } from "react-router-dom";
-import { PageHeader } from "../components/PageHeader.jsx";
-import { api } from "../services/api.js";
-import { T } from "../styles/typography.js";
-import { SOCIETY_TYPE_LABELS } from "../constants.js";
-import { SOCIETY_TYPE_COLORS } from "../styles/cssConstants.js";
-import "../styles/Onboarding.css";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
+import { api } from "../../services/api.js";
+import { T } from "../../styles/typography.js";
+import { SOCIETY_TYPE_LABELS } from "../../constants.js";
+import { SOCIETY_TYPE_COLORS } from "../../styles/cssConstants.js";
+import "../../styles/Onboarding.css";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const STEP_LABELS = ["Building Details", "Unit Structure", "Residents"];

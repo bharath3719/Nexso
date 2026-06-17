@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Stack, Text, Icon, Spinner, SpinnerSize, MessageBar, MessageBarType, DefaultButton, Dialog, DialogType, DialogFooter, PrimaryButton } from "@fluentui/react";
 import { useParams, useNavigate } from "react-router-dom";
-import { CSS_T } from "../styles/typography.js";
-import { api } from "../services/api.js";
-import { validatePhone, validateEmail } from "../utils/validation.js";
-import { BRAND as C, TOWER_GRADIENTS } from "../styles/cssConstants.js";
-import { CONTACT_OPTION_KEYS, BHK_OPTIONS } from "../constants.js";
-import { CredentialsBox } from "../components/onboarding/CredentialsBox.jsx";
-import "../styles/SocietyDetail.css";
+import { CSS_T } from "../../styles/typography.js";
+import { api } from "../../services/api.js";
+import { validatePhone, validateEmail } from "../../utils/validation.js";
+import { BRAND as C, TOWER_GRADIENTS } from "../../styles/cssConstants.js";
+import { CONTACT_OPTION_KEYS, BHK_OPTIONS } from "../../constants.js";
+import { CredentialsBox } from "../../components/onboarding/CredentialsBox.jsx";
+import "../../styles/SocietyDetail.css";
 
 const SOCIETY_TYPE_META = {
   APARTMENT:       { label: "Apartment",       bg: "#eff6ff", fg: "#1d4ed8", icon: "CityNext" },

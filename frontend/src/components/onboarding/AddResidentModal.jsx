@@ -67,24 +67,48 @@ export function AddResidentModal({
   const selFloorObj = selFloorIdx !== null ? floors[selFloorIdx] : null;
   const units       = selFloorObj?.units || [];
 
-  // Key by "towerIdx:unit_number" so the same unit number in different towers
-  // is tracked independently. In edit mode, exclude the current resident so
-  // their own unit doesn't show as "filled".
-  const assignedUnits = new Set(
+  // Track occupied slots by type so a unit can hold one OWNER and one TENANT.
+  // In edit mode, exclude the current resident so their own slot isn't blocked.
+  const assignedSlots = new Set(
     residents
       .filter((r) => !editMode || r.id !== editResident.id)
-      .map((r) => `${r.tower_idx}:${r.unit_number}`)
+      .map((r) => `${r.tower_idx}:${r.unit_number}:${r.resident_type}`)
   );
+
+  const isUnitFull    = (tIdx, unit) =>
+    assignedSlots.has(`${tIdx}:${unit}:OWNER`) &&
+    assignedSlots.has(`${tIdx}:${unit}:TENANT`);
+
+  const isUnitPartial = (tIdx, unit) =>
+    !isUnitFull(tIdx, unit) && (
+      assignedSlots.has(`${tIdx}:${unit}:OWNER`) ||
+      assignedSlots.has(`${tIdx}:${unit}:TENANT`)
+    );
 
   const set = (key, val) => setForm((p) => ({ ...p, [key]: val }));
 
   const handleTowerChange = (idx) => { setSelTowerIdx(idx); setSelFloorIdx(null); setSelUnit(""); setErr(""); };
   const handleFloorChange = (idx) => { setSelFloorIdx(idx); setSelUnit(""); setErr(""); };
 
+  const handleUnitSelect = (unit) => {
+    setSelUnit(unit);
+    setErr("");
+    // Auto-set resident_type to the vacant slot if one is already taken
+    const hasOwner  = assignedSlots.has(`${selTowerIdx}:${unit}:OWNER`);
+    const hasTenant = assignedSlots.has(`${selTowerIdx}:${unit}:TENANT`);
+    if (hasOwner && !hasTenant) set("resident_type", "TENANT");
+    else if (!hasOwner && hasTenant) set("resident_type", "OWNER");
+  };
+
   const handleSubmit = () => {
     if (!editMode && !selUnit) return setErr("Please select a unit number.");
     if (!form.name.trim())     return setErr("Resident name is required.");
     if (!form.phone.trim())    return setErr("Phone number is required.");
+
+    // Prevent duplicate owner/tenant for the same unit
+    if (!editMode && assignedSlots.has(`${selTowerIdx}:${selUnit}:${form.resident_type}`)) {
+      return setErr(`An ${form.resident_type === "OWNER" ? "Owner" : "Tenant"} is already assigned to this unit.`);
+    }
 
     // Format validation — only when a value is present
     const errs = {};
@@ -179,16 +203,23 @@ export function AddResidentModal({
                   ) : (
                     <div className="arm-chips-row">
                       {units.map((u, ui) => {
-                        const filled   = assignedUnits.has(`${selTowerIdx}:${u}`);
+                        const full     = isUnitFull(selTowerIdx, u);
+                        const partial  = isUnitPartial(selTowerIdx, u);
                         const selected = selUnit === u;
+                        const takenType = assignedSlots.has(`${selTowerIdx}:${u}:OWNER`) ? "Owner" : "Tenant";
                         return (
                           <button
                             key={ui}
-                            onClick={() => !filled && setSelUnit(u)}
-                            title={filled ? "Resident already assigned this session" : `Select unit ${u}`}
-                            className={`arm-unit-chip${selected ? " arm-unit-chip--selected" : ""}${filled ? " arm-unit-chip--filled" : ""}`}
+                            onClick={() => !full && handleUnitSelect(u)}
+                            title={
+                              full    ? "Both Owner and Tenant already assigned" :
+                              partial ? `${takenType} assigned — click to add the other type` :
+                                        `Select unit ${u}`
+                            }
+                            className={`arm-unit-chip${selected ? " arm-unit-chip--selected" : ""}${full ? " arm-unit-chip--filled" : ""}${partial ? " arm-unit-chip--partial" : ""}`}
                           >
-                            {filled && <span className="arm-unit-check">✓</span>}
+                            {full    && <span className="arm-unit-check">✓</span>}
+                            {partial && <span className="arm-unit-check">½</span>}
                             {u}
                           </button>
                         );

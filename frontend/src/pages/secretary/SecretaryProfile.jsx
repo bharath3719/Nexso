@@ -9,15 +9,16 @@ import {
   Text, TextField, PrimaryButton, DefaultButton,
   MessageBar, MessageBarType, Spinner,
 } from "@fluentui/react";
-import { PageHeader } from "../../components/PageHeader.jsx";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
 import { api } from "../../services/api.js";
+import { T } from "../../styles/typography.js";
 import "../../styles/SecretaryLayout.css";
 
 function InfoRow({ label, value }) {
   return (
-    <div style={{ display: "flex", padding: "10px 0", borderBottom: "1px solid #f1f5f9", gap: 16 }}>
-      <div style={{ minWidth: 160, fontSize: 13, fontWeight: 600, color: "#64748b" }}>{label}</div>
-      <div style={{ fontSize: 13, color: "#1e293b" }}>{value || "—"}</div>
+    <div className="sec-info-row">
+      <div className="sec-info-row__label">{label}</div>
+      <div className="sec-info-row__value">{value || "—"}</div>
     </div>
   );
 }
@@ -89,11 +90,11 @@ export function SecretaryProfile({ onLogout }) {
           {/* Society details */}
           <div className="sec-card">
             <div className="sec-card-header">
-              <Text styles={{ root: { fontSize: 15, fontWeight: 600, color: "#1e293b" } }}>
+              <Text styles={T.sectionHeader}>
                 Society Details
               </Text>
             </div>
-            <div className="sec-card-body--padded" style={{ padding: "4px 20px 16px" }}>
+            <div className="sec-card-body--padded">
               <InfoRow label="Society Name"   value={account?.society_name}  />
               <InfoRow label="Building ID"    value={account?.building_id}   />
               <InfoRow label="Address"        value={account?.address}       />
@@ -110,11 +111,11 @@ export function SecretaryProfile({ onLogout }) {
           {/* Change password */}
           <div className="sec-card">
             <div className="sec-card-header">
-              <Text styles={{ root: { fontSize: 15, fontWeight: 600, color: "#1e293b" } }}>
+              <Text styles={T.sectionHeader}>
                 Change Password
               </Text>
             </div>
-            <div style={{ padding: "16px 20px" }}>
+            <div className="sec-card-body--form">
               {pwSuccess && (
                 <MessageBar messageBarType={MessageBarType.success} style={{ marginBottom: 12 }}>
                   Password changed successfully.
@@ -126,7 +127,7 @@ export function SecretaryProfile({ onLogout }) {
                 </MessageBar>
               )}
               <form onSubmit={handlePasswordChange}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 400 }}>
+                <div className="sec-form-col sec-form-col--narrow">
                   <TextField
                     label="Current Password"
                     type="password"
@@ -153,7 +154,7 @@ export function SecretaryProfile({ onLogout }) {
                     required
                     disabled={pwSaving}
                   />
-                  <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                  <div className="sec-form-row">
                     {pwSaving
                       ? <Spinner label="Saving…" />
                       : (

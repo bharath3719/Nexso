@@ -77,3 +77,75 @@ export const CONTACT_OPTION_KEYS = ["WHATSAPP", "CALL", "SMS", "EMAIL"];
 export const BHK_OPTIONS = [
   "Studio", "1 BHK", "2 BHK", "3 BHK", "4 BHK", "5 BHK+", "Villa", "Duplex",
 ];
+
+// ─── Maintenance expense sheet defaults ───────────────────────────────────────
+// Pre-filled rows shown when a secretary opens the expense sheet for the first
+// time. Saved sheets from the API override these.
+export const DEFAULT_FIXED_EXPENSE_ITEMS = [
+  { particulars: "Sinking Fund",            total_amount: "" },
+  { particulars: "Structural Repair Fee",   total_amount: "" },
+  { particulars: "Insurance",               total_amount: "" },
+  { particulars: "Parking Fee",             total_amount: "" },
+  { particulars: "Security Fee",            total_amount: "" },
+  { particulars: "Housekeeping Fee",        total_amount: "" },
+  { particulars: "Society Management Fee",  total_amount: "" },
+  { particulars: "Lift Maintenance AMC",    total_amount: "" },
+];
+
+export const DEFAULT_VARIABLE_EXPENSE_ITEMS = [
+  { particulars: "Garbage Collection Fee",  total_amount: "" },
+  { particulars: "Electricity Bill",        total_amount: "" },
+  { particulars: "Generator Fuel",          total_amount: "" },
+  { particulars: "Water Tank Cleaning Fee", total_amount: "" },
+  { particulars: "Non-Occupancy Charges",   total_amount: "" },
+];
+
+// ─── Announcement options ──────────────────────────────────────────────────────
+export const ANNOUNCEMENT_CATEGORY_OPTIONS = [
+  { key: "GENERAL",     text: "General"     },
+  { key: "MAINTENANCE", text: "Maintenance" },
+  { key: "NOTICE",      text: "Notice"      },
+  { key: "EVENT",       text: "Event"       },
+  { key: "EMERGENCY",   text: "Emergency"   },
+];
+
+export const ANNOUNCEMENT_PRIORITY_OPTIONS = [
+  { key: "NORMAL", text: "Normal" },
+  { key: "URGENT", text: "Urgent" },
+];
+
+// ─── Resident form options ─────────────────────────────────────────────────────
+export const RESIDENT_TYPE_OPTIONS = [
+  { key: "OWNER",  text: "Owner"  },
+  { key: "TENANT", text: "Tenant" },
+];
+
+export const BILL_RECIPIENT_OPTIONS = [
+  { key: "OWNER",  text: "Owner (default)" },
+  { key: "TENANT", text: "Tenant"          },
+];
+
+export const CONTACT_PREFERENCE_OPTIONS = [
+  { key: "WHATSAPP", text: "WhatsApp" },
+  { key: "CALL",     text: "Call"     },
+  { key: "SMS",      text: "SMS"      },
+  { key: "EMAIL",    text: "Email"    },
+];
+
+// ─── Maintenance due day options (1–28, avoids month-end issues) ──────────────
+function _ordinalSuffix(n) {
+  if (n >= 11 && n <= 13) return "th";
+  const mod = n % 10;
+  return mod === 1 ? "st" : mod === 2 ? "nd" : mod === 3 ? "rd" : "th";
+}
+
+export const MAINTENANCE_DUE_DAY_OPTIONS = Array.from({ length: 28 }, (_, i) => {
+  const n = i + 1;
+  return { key: n, text: `${n}${_ordinalSuffix(n)} of every month` };
+});
+
+// ─── Ticket status filter options (includes "ALL" sentinel for dropdowns) ──────
+export const TICKET_STATUS_FILTER_OPTIONS = [
+  { key: "ALL", text: "All Statuses" },
+  ...ticketStatuses.map(({ key, label }) => ({ key, text: label })),
+];

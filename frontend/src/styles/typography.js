@@ -33,7 +33,7 @@
  *
  * APP TOKEN HIERARCHY
  * ────────────────────
- *  pageHeader      — top of every page            24 / 32px  / 600
+ *  pageHeader      — top of every page            28 / 36px  / 700
  *  pageSubtitle    — one line beneath pageHeader   14 / 20px  / 400  muted
  *  sectionHeader   — card/section titles           16 / 22px  / 600
  *  subSection      — inside-card sub-headings      14 / 20px  / 600
@@ -144,15 +144,15 @@ const RAMP = {
 
 // ─── T — Fluent UI <Text styles={T.xxx}> objects ─────────────────────────────
 export const T = {
-  // Title 3 — 24/32px semibold  (bold variant for page-level prominence)
+  // Title 2 — 28/36px bold  (page-level prominence)
   pageHeader: {
     root: {
       fontFamily:    FONT_FAMILY,
-      fontSize:      24,
+      fontSize:      28,
       fontWeight:    700,
       color:         PALETTE.textPrimary,
-      lineHeight:    "32px",
-      letterSpacing: "-0.3px",
+      lineHeight:    "36px",
+      letterSpacing: "-0.4px",
     },
   },
 
@@ -286,14 +286,14 @@ export const T = {
 // ─── CSS_T — plain style objects for non-Fluent HTML elements ────────────────
 // Usage: <div style={CSS_T.sectionHeader}>  or  <div style={{ ...CSS_T.sectionHeader, marginTop: 8 }}>
 export const CSS_T = {
-  // Title 3 bold
+  // Title 2 bold
   pageHeader: {
     fontFamily:    FONT_FAMILY,
-    fontSize:      24,
+    fontSize:      28,
     fontWeight:    700,
     color:         PALETTE.textPrimary,
-    lineHeight:    "32px",
-    letterSpacing: "-0.3px",
+    lineHeight:    "36px",
+    letterSpacing: "-0.4px",
   },
 
   // Body 1 regular

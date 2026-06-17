@@ -6,8 +6,9 @@
 
 import React, { useEffect, useState } from "react";
 import { Text, PrimaryButton, Spinner, MessageBar, MessageBarType } from "@fluentui/react";
-import { PageHeader } from "../../components/PageHeader.jsx";
-import { PasswordChangeFields } from "../../components/PasswordChangeFields.jsx";
+import { PageHeader } from "../../components/shared/PageHeader.jsx";
+import { PasswordChangeFields } from "../../components/shared/PasswordChangeFields.jsx";
+import { ErrorBanner, getErrMsg } from "../../components/shared/ErrorBanner.jsx";
 import { api } from "../../services/api.js";
 import "../../styles/VendorLayout.css";
 
@@ -94,23 +95,25 @@ export function VendorProfile({ onLogout }) {
   const [vendor,  setVendor]  = useState(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
+  const [loadKey, setLoadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
+      setError("");
       try {
         const data = await api.vendorPortal.profile();
         if (!cancelled) setVendor(data);
-      } catch {
-        if (!cancelled) setError("Failed to load profile.");
+      } catch (err) {
+        if (!cancelled) setError(getErrMsg(err, "Failed to load profile."));
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [loadKey]);
 
   const v = vendor?.vendor;
 
@@ -121,11 +124,7 @@ export function VendorProfile({ onLogout }) {
         subtitle="Your vendor account details"
       />
 
-      {error && (
-        <div style={{ color: "#dc2626", background: "#fef2f2", borderRadius: 8, padding: "12px 16px", fontSize: 14 }}>
-          {error}
-        </div>
-      )}
+      <ErrorBanner message={error} onRetry={() => setLoadKey((k) => k + 1)} />
 
       {loading ? (
         <Spinner label="Loading profile…" />

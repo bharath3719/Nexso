@@ -269,13 +269,15 @@ router.post("/otp/verify", async (req, res) => {
 
     // Check if auth_account already exists for this phone.
     const existingAcc = await dbQuery(
-      `SELECT id FROM auth_accounts WHERE LOWER(username) = LOWER($1) LIMIT 1`,
+      `SELECT id, force_profile_setup FROM auth_accounts WHERE LOWER(username) = LOWER($1) LIMIT 1`,
       [phone],
     );
 
     let accountId;
+    let forceProfileSetup;
     if (existingAcc?.rows?.length) {
-      accountId = existingAcc.rows[0].id;
+      accountId         = existingAcc.rows[0].id;
+      forceProfileSetup = existingAcc.rows[0].force_profile_setup ?? true;
       await dbQuery(
         `UPDATE auth_accounts SET last_login = NOW(), resident_id = $1, society_id = $2 WHERE id = $3`,
         [resident.resident_id, resident.society_id, accountId],
@@ -287,7 +289,8 @@ router.post("/otp/verify", async (req, res) => {
          RETURNING id`,
         [phone, await bcrypt.hash(crypto.randomUUID(), 4), resident.society_id, resident.resident_id],
       );
-      accountId = newAcc.rows[0].id;
+      accountId         = newAcc.rows[0].id;
+      forceProfileSetup = true;
     }
 
     const payload = {
@@ -305,13 +308,14 @@ router.post("/otp/verify", async (req, res) => {
 
     return res.json({
       token,
-      portalRole:   "RESIDENT",
-      societyId:    resident.society_id,
-      societyName:  resident.society_name,
-      residentId:   resident.resident_id,
-      unitId:       resident.unit_id,
-      unitNumber:   resident.unit_number,
-      name:         resident.name,
+      portalRole:        "RESIDENT",
+      societyId:         resident.society_id,
+      societyName:       resident.society_name,
+      residentId:        resident.resident_id,
+      unitId:            resident.unit_id,
+      unitNumber:        resident.unit_number,
+      name:              resident.name,
+      forceProfileSetup,
     });
   } catch (err) {
     console.error("OTP verify error:", err);
