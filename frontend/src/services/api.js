@@ -197,6 +197,7 @@ export const api = {
     reject:   (id, reason)        => post(`/api/vendors/${id}/reject`, { reason }),
     suspend:  (id, reason)        => post(`/api/vendors/${id}/suspend`, { reason }),
     queue:    ()                  => get('/api/vendors/queue/pending'),
+    documents: (vendorId)         => get(`/api/vendors/${vendorId}/documents`),
   },
 
   // ── Tickets ───────────────────────────────────────────────────────────────
