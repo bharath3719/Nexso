@@ -228,6 +228,22 @@ router.get("/:vendorId/verification-history", async (req, res) => {
   }
 });
 
+// GET /api/vendors/:vendorId/documents
+router.get("/:vendorId/documents", async (req, res) => {
+  try {
+    const id = Number(req.params.vendorId);
+    if (!id || Number.isNaN(id)) return res.status(400).json({ error: "invalid_id" });
+    const r = await dbQuery(
+      "SELECT id, vendor_id, doc_type, filename, url, metadata, uploaded_at FROM vendor_documents WHERE vendor_id=$1 ORDER BY uploaded_at DESC",
+      [id],
+    );
+    return res.json({ documents: r?.rows || [] });
+  } catch (err) {
+    console.error("List vendor documents error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
 // GET /api/vendors/:vendorId/tickets?status=OPEN&limit=50&offset=0
 router.get("/:vendorId/tickets", async (req, res) => {
   try {

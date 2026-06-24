@@ -10,8 +10,12 @@ export default function VendorDocuments({ vendorId }) {
   useEffect(() => {
     if (!vendorId) return;
     let cancelled = false;
-    api.vendors.documents(vendorId)
-      .then((data) => { if (!cancelled) setDocs(data.documents || []); })
+    // Guard: if the API method is missing, degrade to empty instead of throwing
+    // synchronously (which would crash the whole tree before .catch can run).
+    const fetchDocs = api.vendors?.documents;
+    if (typeof fetchDocs !== "function") { setDocs([]); return; }
+    Promise.resolve(fetchDocs(vendorId))
+      .then((data) => { if (!cancelled) setDocs(data?.documents || []); })
       .catch(() => { if (!cancelled) setDocs([]); });
     return () => { cancelled = true; };
   }, [vendorId]);

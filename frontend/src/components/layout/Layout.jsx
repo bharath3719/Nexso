@@ -1,6 +1,7 @@
 import React from "react";
 import nexsoLogo from "../../assets/logo.png";
 import { useShellState, ShellSidebar, SignOutButton } from "./LayoutShared.jsx";
+import { RouteErrorBoundary } from "../shared/ErrorBoundary.jsx";
 import { api } from "../../services/api.js";
 import "../../styles/Layout.css";
 
@@ -49,7 +50,7 @@ export function Layout({ navLinks, children, onLogout }) {
               : l.name
           }
         />
-        <main className="layout-content">{children}</main>
+        <main className="layout-content"><RouteErrorBoundary>{children}</RouteErrorBoundary></main>
       </div>
     </div>
   );

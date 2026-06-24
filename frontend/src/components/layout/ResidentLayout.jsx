@@ -2,6 +2,7 @@ import React from "react";
 import { Text } from "@fluentui/react";
 import nexsoLogo from "../../assets/logo.png";
 import { useShellState, ShellSidebar, SignOutButton } from "./LayoutShared.jsx";
+import { RouteErrorBoundary } from "../shared/ErrorBoundary.jsx";
 import "../../styles/Layout.css";
 import "../../styles/ResidentLayout.css";
 
@@ -53,7 +54,7 @@ export function ResidentLayout({ children, unitNumber, societyName, onLogout }) 
           selectedKey={selectedKey}
           navigate={navigate}
         />
-        <main className="layout-content">{children}</main>
+        <main className="layout-content"><RouteErrorBoundary>{children}</RouteErrorBoundary></main>
       </div>
     </div>
   );

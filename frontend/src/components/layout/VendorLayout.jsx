@@ -3,6 +3,7 @@ import { IconButton, Text } from "@fluentui/react";
 import nexsoLogo from "../../assets/logo.png";
 import { api } from "../../services/api.js";
 import { useShellState, ShellSidebar, SignOutButton } from "./LayoutShared.jsx";
+import { RouteErrorBoundary } from "../shared/ErrorBoundary.jsx";
 import "../../styles/Layout.css";
 import "../../styles/VendorLayout.css";
 
@@ -100,7 +101,7 @@ export function VendorLayout({ children, vendorName, onLogout }) {
             l.key === "vnd-tickets" && notifCount > 0 ? `My Tickets  (${notifCount})` : l.name
           }
         />
-        <main className="layout-content">{children}</main>
+        <main className="layout-content"><RouteErrorBoundary>{children}</RouteErrorBoundary></main>
       </div>
     </div>
   );
