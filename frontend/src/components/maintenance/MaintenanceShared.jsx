@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { DefaultButton, Icon, PrimaryButton, Spinner, TextField, Toggle } from "@fluentui/react";
+import { formatDateShort as fmtDate } from "../../utils/formatDate.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -13,11 +14,6 @@ function fmtINR(val) {
 
 export function fmtINR2(val) {
   return Number(val || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function fmtDate(dateStr) {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 export function computeUpdatedStats(dues) {

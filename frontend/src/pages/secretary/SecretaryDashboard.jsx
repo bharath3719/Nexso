@@ -6,13 +6,17 @@ import { StatusBadge } from "../../components/tickets/TicketShared.jsx";
 import { PortalStatCard, useDashboardData } from "../../components/dashboard/DashboardShared.jsx";
 import { ErrorBanner } from "../../components/shared/ErrorBanner.jsx";
 import { api } from "../../services/api.js";
+import { formatDayMonth } from "../../utils/formatDate.js";
 import { T } from "../../styles/typography.js";
 import { BRAND } from "../../styles/cssConstants.js";
 import "../../styles/SecretaryLayout.css";
 
 const QUICK_ACTIONS = [
+  { label: "Emergency Alert",  icon: "Warning",      path: "/secretary/broadcast", emergency: true },
   { label: "Add Resident",     icon: "AddFriend",    path: "/secretary/residents" },
   { label: "View All Tickets", icon: "BulletedList", path: "/secretary/tickets"  },
+  { label: "Broadcast",        icon: "Send",         path: "/secretary/broadcast" },
+  { label: "Log Expense",      icon: "Money",        path: "/secretary/expenses"  },
 ];
 
 export function SecretaryDashboard({ societyName }) {
@@ -71,9 +75,7 @@ export function SecretaryDashboard({ societyName }) {
                         <td><StatusBadge status={t.status} /></td>
                         <td className="sec-td--caption">{t.priority}</td>
                         <td className="sec-td--secondary">{t.raised_by_name || "—"}</td>
-                        <td className="sec-td--caption">
-                          {new Date(t.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
-                        </td>
+                        <td className="sec-td--caption">{formatDayMonth(t.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -84,13 +86,19 @@ export function SecretaryDashboard({ societyName }) {
 
           {/* Quick actions */}
           <div className="sec-action-row">
-            {QUICK_ACTIONS.map(({ label, icon, path }) => (
-              <DefaultButton
-                key={path}
-                text={label}
-                iconProps={{ iconName: icon }}
-                onClick={() => navigate(path)}
-              />
+            {QUICK_ACTIONS.map(({ label, icon, path, emergency }) => (
+              emergency ? (
+                <button key={path + label} className="sec-emergency-btn" onClick={() => navigate(path)}>
+                  🚨 {label}
+                </button>
+              ) : (
+                <DefaultButton
+                  key={path + label}
+                  text={label}
+                  iconProps={{ iconName: icon }}
+                  onClick={() => navigate(path)}
+                />
+              )
             ))}
           </div>
         </>

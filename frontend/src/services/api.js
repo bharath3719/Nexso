@@ -352,6 +352,66 @@ export const api = {
         return get(`/api/secretary/maintenance/tally${qs}`);
       },
     },
+
+    // ── Secretary broadcast (SEC-102, SEC-105) ───────────────────────────────
+    towers: () => get('/api/secretary/towers'),
+
+    broadcastPreview: (target, tower_id) => {
+      const qs = new URLSearchParams({ target, ...(tower_id ? { tower_id } : {}) }).toString();
+      return get(`/api/secretary/broadcast/preview?${qs}`);
+    },
+
+    broadcast: (data)       => post('/api/secretary/broadcast', data),
+    emergencyAlert: (data)  => post('/api/secretary/emergency-alert', data),
+    broadcasts: (limit = 20) => get(`/api/secretary/broadcasts?limit=${limit}`),
+
+    // ── Secretary events ──────────────────────────────────────────────────────
+    events: {
+      list:   ()           => get('/api/secretary/events'),
+      create: (data)       => post('/api/secretary/events', data),
+      update: (id, data)   => patch(`/api/secretary/events/${id}`, data),
+      delete: (id)         => del(`/api/secretary/events/${id}`),
+    },
+
+    // ── Secretary polls ───────────────────────────────────────────────────────
+    polls: {
+      list:    ()     => get('/api/secretary/polls'),
+      results: (id)   => get(`/api/secretary/polls/${id}/results`),
+      create:  (data) => post('/api/secretary/polls', data),
+      delete:  (id)   => del(`/api/secretary/polls/${id}`),
+    },
+
+    // ── Expense Ledger (SEC-104) ──────────────────────────────────────────────
+    expenses: {
+      /** I&E summary for a month (defaults to current month) */
+      summary: (month) => {
+        const qs = month ? `?month=${month}` : '';
+        return get(`/api/secretary/expenses/summary${qs}`);
+      },
+      /** 12-month annual table for AGM/audit */
+      annual: (year) => {
+        const qs = year ? `?year=${year}` : '';
+        return get(`/api/secretary/expenses/annual${qs}`);
+      },
+      /** Ledger list with filters */
+      list: (params = {}) => {
+        const qs = new URLSearchParams(params).toString();
+        return get(`/api/secretary/expenses${qs ? `?${qs}` : ''}`);
+      },
+      create: (data)     => post('/api/secretary/expenses', data),
+      update: (id, data) => patch(`/api/secretary/expenses/${id}`, data),
+      delete: (id)       => del(`/api/secretary/expenses/${id}`),
+    },
+
+    // ── Other Income (SEC-104) ────────────────────────────────────────────────
+    otherIncome: {
+      list: (params = {}) => {
+        const qs = new URLSearchParams(params).toString();
+        return get(`/api/secretary/other-income${qs ? `?${qs}` : ''}`);
+      },
+      create: (data) => post('/api/secretary/other-income', data),
+      delete: (id)   => del(`/api/secretary/other-income/${id}`),
+    },
   },
 
   // ── Maintenance (admin) ───────────────────────────────────────────────────
@@ -390,6 +450,22 @@ export const api = {
       },
       create: (data) => post('/api/resident/visitor-passes', data),
       revoke: (id)   => patch(`/api/resident/visitor-passes/${id}/revoke`, {}),
+    },
+
+    complaints: {
+      list:   ()     => get('/api/resident/complaints'),
+      get:    (id)   => get(`/api/resident/complaints/${id}`),
+      create: (data) => post('/api/resident/complaints', data),
+    },
+
+    events: {
+      list: () => get('/api/resident/events'),
+      rsvp: (id, response) => post(`/api/resident/events/${id}/rsvp`, { response }),
+    },
+
+    polls: {
+      list: ()                 => get('/api/resident/polls'),
+      vote: (id, option_index) => post(`/api/resident/polls/${id}/vote`, { option_index }),
     },
 
     maintenance: {

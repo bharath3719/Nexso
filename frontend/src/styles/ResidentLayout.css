@@ -198,3 +198,556 @@
   font-size: 14px;
   color: #15803d;
 }
+
+/* ── Toast ────────────────────────────────────────────────────────────── */
+
+.res-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #1e293b;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 9999;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+/* ── Status badge ─────────────────────────────────────────────────────── */
+
+.res-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  letter-spacing: 0.03em;
+}
+.res-badge--PENDING { background: #fef9c3; color: #854d0e; }
+.res-badge--OVERDUE { background: #fee2e2; color: #991b1b; }
+.res-badge--PAID    { background: #dcfce7; color: #166534; }
+.res-badge--WAIVED  { background: #f1f5f9; color: #475569; }
+
+/* Square status tags (complaints / tickets) */
+.res-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.res-tag--OPEN        { background: #dbeafe; color: #1d4ed8; }
+.res-tag--ASSIGNED    { background: #fef3c7; color: #92400e; }
+.res-tag--IN_PROGRESS { background: #ede9fe; color: #6d28d9; }
+.res-tag--RESOLVED    { background: #dcfce7; color: #166534; }
+.res-tag--CLOSED      { background: #f1f5f9; color: #475569; }
+.res-tag--urgent      { background: #fee2e2; color: #991b1b; }
+/* Visitor-pass statuses */
+.res-tag--ACTIVE  { background: #dcfce7; color: #166534; }
+.res-tag--USED    { background: #f1f5f9; color: #475569; }
+.res-tag--EXPIRED { background: #f1f5f9; color: #94a3b8; }
+.res-tag--REVOKED { background: #fee2e2; color: #991b1b; }
+
+/* ── Grouped list (heading + vertical card stack) ─────────────────────── */
+
+.res-group { display: flex; flex-direction: column; gap: 12px; }
+.res-group-heading {
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.res-group-heading--muted { color: #94a3b8; }
+
+/* ── Event cards ──────────────────────────────────────────────────────── */
+
+.res-event-group { display: flex; flex-direction: column; gap: 12px; }
+.res-event-section {
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.res-event-section--muted { color: #94a3b8; }
+
+/* ── Poll cards ───────────────────────────────────────────────────────── */
+
+.res-poll-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.res-poll-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.res-poll-q { font-weight: 700; font-size: 15px; color: #1e293b; }
+.res-poll-meta { font-size: 12px; color: #94a3b8; margin-top: 3px; }
+.res-poll-badge {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 2px 7px;
+  flex-shrink: 0;
+}
+.res-poll-badge--open   { background: #dcfce7; color: #166534; }
+.res-poll-badge--closed { background: #f1f5f9; color: #475569; }
+
+.res-poll-options { display: flex; flex-direction: column; gap: 8px; }
+.res-poll-opt {
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 2px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: all 150ms;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.res-poll-opt:disabled { cursor: default; }
+.res-poll-opt--mine { border-color: #2563eb; background: #dbeafe; color: #1d4ed8; font-weight: 600; }
+.res-poll-opt-mark { font-size: 13px; color: #2563eb; }
+.res-poll-note { font-size: 12px; color: #64748b; }
+.res-poll-submitting { font-size: 13px; color: #64748b; }
+
+.res-poll-results { border-top: 1px solid #f1f5f9; padding-top: 12px; }
+.res-poll-results-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.res-poll-results-list { display: flex; flex-direction: column; gap: 8px; }
+.res-poll-result-top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 3px; }
+.res-poll-result-label { color: #334155; }
+.res-poll-result-pct { color: #64748b; font-weight: 600; }
+.res-poll-bar { background: #f1f5f9; border-radius: 4px; height: 6px; }
+.res-poll-bar-fill { height: 100%; background: #2563eb; border-radius: 4px; } /* width set inline (dynamic) */
+
+.res-event-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.res-event-card--past { opacity: 0.72; }
+
+.res-event-top { display: flex; gap: 14px; align-items: flex-start; }
+.res-event-datechip {
+  background: #dbeafe;
+  border-radius: 8px;
+  min-width: 52px;
+  padding: 8px 10px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.res-event-datechip--past { background: #f1f5f9; }
+.res-event-day  { font-size: 11px; font-weight: 700; color: #2563eb; text-transform: uppercase; }
+.res-event-time { font-size: 13px; font-weight: 600; color: #1e40af; }
+.res-event-datechip--past .res-event-day  { color: #64748b; }
+.res-event-datechip--past .res-event-time { color: #94a3b8; }
+
+.res-event-body  { flex: 1; }
+.res-event-title { font-weight: 700; font-size: 15px; color: #1e293b; }
+.res-event-loc   { font-size: 13px; color: #64748b; margin-top: 2px; }
+.res-event-desc  { margin: 6px 0 0; font-size: 13px; color: #475569; line-height: 1.5; }
+
+.res-event-footer {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+.res-event-counts { font-size: 12px; color: #94a3b8; }
+.res-event-ended {
+  font-size: 12px;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #64748b;
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+.res-rsvp-row { display: flex; gap: 6px; }
+.res-rsvp-btn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 150ms;
+}
+.res-rsvp-btn:disabled { cursor: not-allowed; }
+.res-rsvp-btn--YES   { background: #dcfce7; color: #166534; }
+.res-rsvp-btn--MAYBE { background: #fef9c3; color: #92400e; }
+.res-rsvp-btn--NO    { background: #fee2e2; color: #991b1b; }
+.res-rsvp-btn--YES.is-active   { background: #16a34a; color: #fff; }
+.res-rsvp-btn--MAYBE.is-active { background: #d97706; color: #fff; }
+.res-rsvp-btn--NO.is-active    { background: #dc2626; color: #fff; }
+
+/* ── Complaint cards ──────────────────────────────────────────────────── */
+
+.res-complaint-list { display: flex; flex-direction: column; gap: 12px; }
+.res-complaint-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.res-complaint-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.res-complaint-titlerow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.res-complaint-title { font-weight: 700; font-size: 15px; color: #1e293b; }
+.res-complaint-desc  { margin: 0; font-size: 13px; color: #475569; line-height: 1.6; }
+.res-complaint-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.res-complaint-ticket { font-size: 12px; color: #94a3b8; font-family: monospace; }
+.res-complaint-date   { font-size: 12px; color: #94a3b8; }
+.res-complaint-vendor { font-size: 12px; color: #64748b; }
+.res-complaint-footer { border-top: 1px solid #f1f5f9; padding-top: 10px; }
+
+/* ── Complaint form ───────────────────────────────────────────────────── */
+
+.res-form { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.res-priority-row { display: flex; gap: 10px; }
+.res-priority-btn {
+  padding: 6px 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 2px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+}
+.res-priority-btn:disabled { cursor: not-allowed; }
+.res-priority-btn--normal { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+.res-priority-btn--urgent { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.res-form-actions-end { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* ── Visitor pass cards ───────────────────────────────────────────────── */
+
+.res-pass-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.res-pass-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.res-pass-name { font-weight: 700; font-size: 15px; color: #1e293b; }
+.res-pass-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+  font-size: 13px;
+  color: #475569;
+}
+.res-pass-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.res-pass-code {
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: 600;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 4px 12px;
+  color: #334155;
+}
+.res-pass-actions { display: flex; gap: 8px; }
+
+/* ── Share sheet ──────────────────────────────────────────────────────── */
+
+.res-share-url {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+.res-share-url-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px; }
+.res-share-copy {
+  background: #e2e8f0;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+}
+.res-share-copy.is-copied { background: #dcfce7; color: #15803d; }
+.res-share-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.res-share-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+}
+.res-share-btn-emoji { font-size: 20px; }
+.res-share-btn--whatsapp { background: #25d366; color: #fff; }
+.res-share-btn--gmail    { background: #ea4335; color: #fff; }
+.res-share-btn--email    { background: #f1f5f9; color: #1e293b; }
+.res-share-btn--more     { background: #0ea5e9; color: #fff; }
+
+/* ── Status stepper ───────────────────────────────────────────────────── */
+
+.res-stepper { display: flex; align-items: flex-start; margin-bottom: 20px; }
+.res-step { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; }
+.res-step-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e2e8f0;
+  color: #94a3b8;
+  font-weight: 700;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.res-step-dot--done    { background: #2563eb; color: #fff; }
+.res-step-dot--current { box-shadow: 0 0 0 3px #bfdbfe; }
+.res-step-label {
+  font-size: 10px;
+  margin-top: 4px;
+  text-align: center;
+  max-width: 46px;
+  line-height: 1.3;
+  color: #94a3b8;
+  font-weight: 400;
+}
+.res-step-label--done    { color: #2563eb; font-weight: 600; }
+.res-step-label--current { color: #2563eb; font-weight: 700; }
+.res-step-bar { flex: 1; height: 2px; margin-top: 12px; background: #e2e8f0; }
+.res-step-bar--done { background: #2563eb; }
+
+/* ── Status tracker bottom sheet ──────────────────────────────────────── */
+
+.res-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.res-sheet {
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  width: 100%;
+  max-width: 520px;
+  padding: 20px 20px 32px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.res-sheet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.res-sheet-close { background: none; border: none; cursor: pointer; font-size: 18px; color: #94a3b8; }
+.res-sheet-category { font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 2px; }
+.res-sheet-ticket { font-size: 12px; font-family: monospace; color: #94a3b8; margin-bottom: 20px; }
+.res-sheet-vendor {
+  margin-bottom: 20px;
+  padding: 10px 14px;
+  background: #f0f9ff;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #0369a1;
+}
+.res-sheet-error { color: #ef4444; font-size: 13px; }
+
+/* Activity timeline */
+.res-timeline { border-top: 1px solid #f1f5f9; padding-top: 16px; }
+.res-timeline-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.res-timeline-row { display: flex; gap: 12px; }
+.res-timeline-rail { display: flex; flex-direction: column; align-items: center; width: 16px; }
+.res-timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 3px;
+  background: #cbd5e1;
+}
+.res-timeline-dot--latest { background: #2563eb; }
+.res-timeline-line { width: 1px; flex: 1; min-height: 24px; background: #e2e8f0; margin: 4px 0; }
+.res-timeline-body { flex: 1; padding-bottom: 16px; }
+.res-timeline-label { font-size: 13px; font-weight: 600; color: #1e293b; }
+.res-timeline-sub  { font-size: 12px; color: #64748b; margin-top: 2px; }
+.res-timeline-date { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+
+/* ── Billing summary cards ────────────────────────────────────────────── */
+
+.res-bill-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+.res-bill-card {
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  padding: 18px 20px;
+}
+.res-bill-card--alert { background: #fff8f8; border-color: #fecaca; }
+.res-bill-card-label {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.res-bill-card-label--alert { color: #dc2626; }
+.res-bill-card-value { font-size: 22px; font-weight: 700; color: #1e293b; }
+.res-bill-card-value--alert { color: #dc2626; }
+.res-bill-card-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
+
+/* ── Billing tabs ─────────────────────────────────────────────────────── */
+
+.res-bill-tabs { display: flex; border-bottom: 1px solid #e2e8f0; }
+.res-bill-tab {
+  padding: 14px 20px;
+  font-size: 14px;
+  font-weight: 400;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+.res-bill-tab--active { font-weight: 600; color: #2563eb; border-bottom-color: #2563eb; }
+
+/* ── Billing table (grid layout defined ONCE here) ────────────────────── */
+
+.res-bill-row {
+  display: grid;
+  grid-template-columns: 1fr 120px 120px 90px 110px;
+  align-items: center;
+  gap: 8px;
+}
+.res-bill-thead {
+  padding: 10px 20px;
+  border-bottom: 2px solid #e2e8f0;
+  background: #f8fafc;
+}
+.res-bill-th {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.res-bill-th--right  { text-align: right; }
+.res-bill-th--center { text-align: center; }
+
+.res-bill-due {
+  padding: 14px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fff;
+}
+.res-bill-due--overdue { background: #fff8f8; }
+
+.res-bill-month  { font-weight: 600; font-size: 14px; color: #1e293b; }
+.res-bill-submeta { font-size: 11px; color: #64748b; margin-top: 2px; }
+.res-bill-submeta--overdue { color: #dc2626; font-weight: 500; }
+
+.res-bill-amount { text-align: right; font-weight: 700; font-size: 15px; color: #1e293b; }
+.res-bill-amount--overdue { color: #dc2626; }
+.res-bill-invoice { text-align: right; font-size: 12px; color: #64748b; }
+.res-bill-status { text-align: center; }
+
+.res-bill-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.res-bill-pay {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+  text-decoration: none;
+  display: inline-block;
+}
+.res-bill-receipt {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #2563eb;
+  cursor: pointer;
+}
+.res-bill-receipt:disabled { opacity: 0.6; cursor: default; }

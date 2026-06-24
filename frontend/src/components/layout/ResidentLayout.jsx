@@ -10,6 +10,9 @@ const residentNavLinks = [
   { name: "My Payments",   key: "res-billing",  path: "/resident/billing",         iconProps: { iconName: "Money"      } },
   { name: "Announcements", key: "res-announce", path: "/resident/announcements",   iconProps: { iconName: "Megaphone"  } },
   { name: "Visitor Passes",key: "res-visitor",  path: "/resident/visitor-passes",  iconProps: { iconName: "Contact"    } },
+  { name: "Complaints",     key: "res-complaints", path: "/resident/complaints",       iconProps: { iconName: "Issue"      } },
+  { name: "Events",         key: "res-events",     path: "/resident/events",           iconProps: { iconName: "Calendar"   } },
+  { name: "Polls",          key: "res-polls",      path: "/resident/polls",            iconProps: { iconName: "BarChart4"  } },
   { name: "My Profile",    key: "res-profile",  path: "/resident/profile",         iconProps: { iconName: "EditContact"} },
 ];
 

@@ -33,20 +33,21 @@
   align-items: center;
   background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 45%, #3b82f6 100%);
   color: #fff;
-  padding: 0 8px;
+  padding: 0 16px;
+  min-height: 56px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .layout-logo {
   display: flex;
   align-items: center;
-  padding-left: 12px;
+  padding-left: 4px;
   cursor: pointer;
   text-decoration: none;
 }
 
 .layout-logo-img {
-  height: 28px;
+  height: 38px;
   width: auto;
   display: block;
   padding: 2px 4px;

@@ -38,23 +38,26 @@ function StatCard({ icon, label, value, color, onClick }) {
 export function ResidentDashboard({ unitNumber, societyName, residentName }) {
   const navigate = useNavigate();
   const [announcements, setAnnouncements] = React.useState([]);
-  const [passes, setPasses]               = React.useState([]);
-  const [dues,   setDues]                 = React.useState([]);
-  const [loading, setLoading]             = React.useState(true);
+  const [passes,        setPasses]        = React.useState([]);
+  const [dues,          setDues]          = React.useState([]);
+  const [complaints,    setComplaints]    = React.useState([]);
+  const [loading,       setLoading]       = React.useState(true);
 
   React.useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const [ann, vp, billing] = await Promise.all([
+        const [ann, vp, billing, comp] = await Promise.all([
           api.resident.announcements().catch(() => ({ announcements: [] })),
           api.resident.visitorPasses.list({ status: "ACTIVE" }).catch(() => ({ passes: [] })),
           api.resident.maintenance.dues("pending").catch(() => ({ dues: [] })),
+          api.resident.complaints.list().catch(() => ({ complaints: [] })),
         ]);
         if (!cancelled) {
           setAnnouncements(ann.announcements || []);
           setPasses(vp.passes || []);
           setDues(billing.dues || []);
+          setComplaints(comp.complaints || []);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -68,6 +71,7 @@ export function ResidentDashboard({ unitNumber, societyName, residentName }) {
   const activePasses        = passes.length;
   const overdueDues         = dues.filter((d) => d.status === "OVERDUE").length;
   const pendingDues         = dues.filter((d) => d.status === "PENDING").length;
+  const openComplaints      = complaints.filter((c) => c.status !== "RESOLVED" && c.status !== "CLOSED").length;
 
   return (
     <div className="res-page">
@@ -94,6 +98,8 @@ export function ResidentDashboard({ unitNumber, societyName, residentName }) {
               color={overdueDues > 0 ? "#fee2e2" : "#fef9c3"}
               onClick={() => navigate("/resident/billing")}
             />
+            <StatCard icon="🔧" label="Open Complaints" value={openComplaints} color="#ede9fe"
+              onClick={() => navigate("/resident/complaints")} />
           </div>
 
           {urgentAnnouncements.length > 0 && (
@@ -126,6 +132,7 @@ export function ResidentDashboard({ unitNumber, societyName, residentName }) {
               { label: "💰  My Payments",        path: "/resident/billing"          },
               { label: "📢  View Announcements", path: "/resident/announcements"    },
               { label: "🎫  Create Visitor Pass", path: "/resident/visitor-passes"  },
+              { label: "🔧  My Complaints",       path: "/resident/complaints"       },
             ].map(({ label, path }) => (
               <button
                 key={path}
