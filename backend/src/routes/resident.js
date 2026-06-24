@@ -340,4 +340,216 @@ router.get("/maintenance/invoice/:dueId/pdf", async (req, res) => {
   }
 });
 
+// ── GET /api/resident/events ─────────────────────────────────────────────────
+
+router.get("/events", async (req, res) => {
+  try {
+    const { residentId, societyId } = req.user;
+
+    const result = await dbQuery(
+      `SELECT e.*,
+              COUNT(r2.id) FILTER (WHERE r2.response = 'YES')   AS rsvp_yes,
+              COUNT(r2.id) FILTER (WHERE r2.response = 'NO')    AS rsvp_no,
+              COUNT(r2.id) FILTER (WHERE r2.response = 'MAYBE') AS rsvp_maybe,
+              my.response AS my_response
+       FROM society_events e
+       LEFT JOIN event_rsvps r2 ON r2.event_id = e.id
+       LEFT JOIN event_rsvps my ON my.event_id = e.id AND my.resident_id = $2
+       WHERE e.society_id = $1
+       GROUP BY e.id, my.response
+       ORDER BY e.event_date ASC`,
+      [societyId, residentId],
+    );
+    return res.json({ events: result?.rows || [] });
+  } catch (err) {
+    console.error("Resident list events error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/resident/events/:id/rsvp ───────────────────────────────────────
+
+router.post("/events/:id/rsvp", async (req, res) => {
+  try {
+    const { residentId, societyId } = req.user;
+    const { response } = req.body || {};
+
+    const valid = ["YES", "NO", "MAYBE"];
+    if (!valid.includes(response)) return res.status(400).json({ error: "invalid_response" });
+
+    const eventRes = await dbQuery(
+      `SELECT id FROM society_events WHERE id = $1 AND society_id = $2`,
+      [req.params.id, societyId],
+    );
+    if (!eventRes?.rows?.length) return res.status(404).json({ error: "event_not_found" });
+
+    await dbQuery(
+      `INSERT INTO event_rsvps (event_id, resident_id, society_id, response)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (event_id, resident_id)
+       DO UPDATE SET response = EXCLUDED.response, updated_at = NOW()`,
+      [req.params.id, residentId, societyId, response],
+    );
+    return res.json({ success: true, response });
+  } catch (err) {
+    console.error("Resident RSVP error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/resident/polls ───────────────────────────────────────────────────
+
+router.get("/polls", async (req, res) => {
+  try {
+    const { residentId, societyId } = req.user;
+
+    const result = await dbQuery(
+      `SELECT p.*,
+              COUNT(v.id)        AS total_votes,
+              my.option_index    AS my_vote,
+              CASE WHEN p.closes_at IS NULL OR p.closes_at > NOW() THEN true ELSE false END AS is_open
+       FROM polls p
+       LEFT JOIN poll_votes v  ON v.poll_id = p.id
+       LEFT JOIN poll_votes my ON my.poll_id = p.id AND my.resident_id = $2
+       WHERE p.society_id = $1
+       GROUP BY p.id, my.option_index
+       ORDER BY p.created_at DESC`,
+      [societyId, residentId],
+    );
+    return res.json({ polls: result?.rows || [] });
+  } catch (err) {
+    console.error("Resident list polls error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/resident/polls/:id/vote ────────────────────────────────────────
+
+router.post("/polls/:id/vote", async (req, res) => {
+  try {
+    const { residentId, societyId } = req.user;
+    const { option_index } = req.body || {};
+
+    if (typeof option_index !== "number" && typeof option_index !== "string") {
+      return res.status(400).json({ error: "option_index_required" });
+    }
+    const idx = Number(option_index);
+    if (!Number.isFinite(idx) || idx < 0) return res.status(400).json({ error: "invalid_option_index" });
+
+    const pollRes = await dbQuery(
+      `SELECT * FROM polls WHERE id = $1 AND society_id = $2`,
+      [req.params.id, societyId],
+    );
+    if (!pollRes?.rows?.length) return res.status(404).json({ error: "poll_not_found" });
+    const poll = pollRes.rows[0];
+
+    if (poll.closes_at && new Date(poll.closes_at) < new Date()) {
+      return res.status(400).json({ error: "poll_closed" });
+    }
+    if (idx >= (poll.options || []).length) {
+      return res.status(400).json({ error: "invalid_option_index" });
+    }
+
+    await dbQuery(
+      `INSERT INTO poll_votes (poll_id, resident_id, society_id, option_index)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (poll_id, resident_id)
+       DO UPDATE SET option_index = EXCLUDED.option_index`,
+      [req.params.id, residentId, societyId, idx],
+    );
+    return res.json({ success: true, option_index: idx });
+  } catch (err) {
+    console.error("Resident poll vote error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/resident/complaints/:id ─────────────────────────────────────────
+
+router.get("/complaints/:id", async (req, res) => {
+  try {
+    const { unitId, societyId } = req.user;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+
+    const [ticketRes, logsRes] = await Promise.all([
+      dbQuery(
+        `SELECT t.id, t.ticket_id, t.category, t.description, t.priority,
+                t.status, t.created_at, t.updated_at,
+                v.business_name AS vendor_name
+         FROM tickets t
+         LEFT JOIN vendors v ON v.id = t.assigned_vendor_id
+         WHERE t.id = $1 AND t.society_id = $2 AND t.unit_id = $3`,
+        [id, societyId, unitId],
+      ),
+      dbQuery(
+        `SELECT actor_role, from_status, to_status, note, created_at
+         FROM ticket_activity_logs
+         WHERE ticket_id = $1
+         ORDER BY created_at ASC`,
+        [id],
+      ),
+    ]);
+
+    if (!ticketRes?.rows?.length) return res.status(404).json({ error: "complaint_not_found" });
+
+    return res.json({ complaint: ticketRes.rows[0], activity: logsRes?.rows || [] });
+  } catch (err) {
+    console.error("Resident complaint detail error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/resident/complaints ─────────────────────────────────────────────
+
+router.get("/complaints", async (req, res) => {
+  try {
+    const { unitId, societyId } = req.user;
+
+    const result = await dbQuery(
+      `SELECT t.id, t.ticket_id, t.category, t.description, t.priority,
+              t.status, t.created_at, t.updated_at,
+              v.business_name AS vendor_name
+       FROM tickets t
+       LEFT JOIN vendors v ON v.id = t.assigned_vendor_id
+       WHERE t.society_id = $1 AND t.unit_id = $2
+       ORDER BY t.created_at DESC`,
+      [societyId, unitId],
+    );
+
+    return res.json({ complaints: result?.rows || [] });
+  } catch (err) {
+    console.error("Resident complaints list error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/resident/complaints ────────────────────────────────────────────
+
+router.post("/complaints", async (req, res) => {
+  try {
+    const { unitId, societyId } = req.user;
+    const { category, description, priority } = req.body || {};
+
+    if (!category?.trim()) return res.status(400).json({ error: "category_required" });
+    if (!description?.trim()) return res.status(400).json({ error: "description_required" });
+
+    const ticketPriority = priority === "URGENT" ? "URGENT" : "NORMAL";
+    const ticketId = `T-${Date.now()}`;
+
+    const result = await dbQuery(
+      `INSERT INTO tickets
+         (ticket_id, society_id, unit_id, category, description, priority, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'OPEN')
+       RETURNING id, ticket_id, category, description, priority, status, created_at`,
+      [ticketId, societyId, unitId, category.trim(), description.trim(), ticketPriority],
+    );
+
+    return res.status(201).json({ complaint: result.rows[0] });
+  } catch (err) {
+    console.error("Resident complaint create error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
 export default router;

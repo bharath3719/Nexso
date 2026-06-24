@@ -10,6 +10,10 @@ const secretaryNavLinks = [
   { name: "Residents",      key: "sec-residents",    path: "/secretary/residents",        iconProps: { iconName: "Group"       } },
   { name: "Tickets",        key: "sec-tickets",      path: "/secretary/tickets",          iconProps: { iconName: "Ticket"      } },
   { name: "Announcements",  key: "sec-announce",     path: "/secretary/announcements",    iconProps: { iconName: "Megaphone"   } },
+  { name: "Events",         key: "sec-events",       path: "/secretary/events",           iconProps: { iconName: "Calendar"    } },
+  { name: "Polls",          key: "sec-polls",        path: "/secretary/polls",            iconProps: { iconName: "BarChart4"   } },
+  { name: "Broadcast",      key: "sec-broadcast",    path: "/secretary/broadcast",        iconProps: { iconName: "Send"        } },
+  { name: "Finances",       key: "sec-expenses",     path: "/secretary/expenses",         iconProps: { iconName: "Money"       } },
   { name: "Maintenance",    key: "sec-maintenance",  path: "/secretary/maintenance",      iconProps: { iconName: "PaymentCard" } },
   { name: "My Profile",     key: "sec-profile",      path: "/secretary/profile",          iconProps: { iconName: "Contact"     } },
 ];

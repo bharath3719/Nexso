@@ -1627,4 +1627,740 @@ router.delete("/announcements/:id", async (req, res) => {
   }
 });
 
+// ── GET /api/secretary/towers ────────────────────────────────────────────────
+
+router.get("/towers", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const result = await dbQuery(
+      `SELECT id, name FROM towers WHERE society_id = $1 ORDER BY name`,
+      [societyId],
+    );
+    return res.json({ towers: result?.rows || [] });
+  } catch (err) {
+    console.error("Secretary towers error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/broadcast/preview ─────────────────────────────────────
+// Returns the number of residents that would receive the broadcast for a given target.
+
+router.get("/broadcast/preview", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const { target, tower_id } = req.query;
+
+    let sql, params;
+    if (target === "OVERDUE") {
+      sql = `SELECT COUNT(DISTINCT r.id) AS count
+             FROM residents r
+             JOIN maintenance_dues md ON md.resident_id = r.id
+             WHERE r.society_id = $1 AND md.status = 'OVERDUE' AND r.phone IS NOT NULL`;
+      params = [societyId];
+    } else if (target === "TOWER" && tower_id) {
+      sql = `SELECT COUNT(DISTINCT r.id) AS count
+             FROM residents r
+             JOIN units u ON u.id = r.unit_id
+             LEFT JOIN floors f ON f.id = u.floor_id
+             WHERE r.society_id = $1
+               AND (u.tower_id = $2 OR f.tower_id = $2)
+               AND r.phone IS NOT NULL`;
+      params = [societyId, tower_id];
+    } else {
+      sql = `SELECT COUNT(DISTINCT r.id) AS count
+             FROM residents r
+             WHERE r.society_id = $1 AND r.phone IS NOT NULL`;
+      params = [societyId];
+    }
+
+    const result = await dbQuery(sql, params);
+    return res.json({ count: Number(result?.rows?.[0]?.count || 0) });
+  } catch (err) {
+    console.error("Broadcast preview error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/secretary/broadcast ────────────────────────────────────────────
+// Sends a WhatsApp message to a filtered group of residents and logs the broadcast.
+
+router.post("/broadcast", async (req, res) => {
+  try {
+    const { societyId, id: sentByUserId } = req.user;
+    const { message, target = "ALL", tower_id } = req.body || {};
+
+    if (!message?.trim()) return res.status(400).json({ error: "message_required" });
+
+    let sql, params;
+    if (target === "OVERDUE") {
+      sql = `SELECT DISTINCT r.phone, r.name FROM residents r
+             JOIN maintenance_dues md ON md.resident_id = r.id
+             WHERE r.society_id = $1 AND md.status = 'OVERDUE' AND r.phone IS NOT NULL`;
+      params = [societyId];
+    } else if (target === "TOWER" && tower_id) {
+      sql = `SELECT DISTINCT r.phone, r.name FROM residents r
+             JOIN units u ON u.id = r.unit_id
+             LEFT JOIN floors f ON f.id = u.floor_id
+             WHERE r.society_id = $1
+               AND (u.tower_id = $2 OR f.tower_id = $2)
+               AND r.phone IS NOT NULL`;
+      params = [societyId, tower_id];
+    } else {
+      sql = `SELECT DISTINCT r.phone, r.name FROM residents r
+             WHERE r.society_id = $1 AND r.phone IS NOT NULL`;
+      params = [societyId];
+    }
+
+    const recipientsRes = await dbQuery(sql, params);
+    const recipients    = recipientsRes?.rows || [];
+
+    const results  = await Promise.allSettled(
+      recipients.map((r) => sendWhatsAppText(r.phone, message.trim())),
+    );
+    const sentCount = results.filter((r) => r.status === "fulfilled").length;
+
+    await dbQuery(
+      `INSERT INTO outbound_broadcasts
+         (society_id, sent_by_user_id, message, target_type, target_meta, is_emergency, recipient_count, sent_count)
+       VALUES ($1, $2, $3, $4, $5, false, $6, $7)`,
+      [societyId, sentByUserId, message.trim(), target,
+       JSON.stringify(target === "TOWER" ? { tower_id } : {}),
+       recipients.length, sentCount],
+    );
+
+    return res.json({ sent: sentCount, total: recipients.length });
+  } catch (err) {
+    console.error("Broadcast send error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/secretary/emergency-alert ──────────────────────────────────────
+// Sends an emergency WhatsApp blast to ALL residents and creates a pinned URGENT announcement.
+
+router.post("/emergency-alert", async (req, res) => {
+  try {
+    const { societyId, id: sentByUserId } = req.user;
+    const { message, title = "Emergency Notice" } = req.body || {};
+
+    if (!message?.trim()) return res.status(400).json({ error: "message_required" });
+
+    const recipientsRes = await dbQuery(
+      `SELECT DISTINCT r.phone, r.name FROM residents r
+       WHERE r.society_id = $1 AND r.phone IS NOT NULL`,
+      [societyId],
+    );
+    const recipients = recipientsRes?.rows || [];
+
+    const results  = await Promise.allSettled(
+      recipients.map((r) => sendWhatsAppText(r.phone, `🚨 EMERGENCY ALERT\n\n${message.trim()}`)),
+    );
+    const sentCount = results.filter((r) => r.status === "fulfilled").length;
+
+    // Create a pinned URGENT announcement so residents see it in the portal too.
+    const annResult = await dbQuery(
+      `INSERT INTO announcements (society_id, title, body, category, priority, pinned, created_by)
+       VALUES ($1, $2, $3, 'EMERGENCY', 'URGENT', true, $4)
+       RETURNING id`,
+      [societyId, title.trim(), message.trim(), sentByUserId],
+    );
+    const announcementId = annResult?.rows?.[0]?.id || null;
+
+    await dbQuery(
+      `INSERT INTO outbound_broadcasts
+         (society_id, sent_by_user_id, message, target_type, is_emergency, announcement_id, recipient_count, sent_count)
+       VALUES ($1, $2, $3, 'ALL', true, $4, $5, $6)`,
+      [societyId, sentByUserId, message.trim(), announcementId, recipients.length, sentCount],
+    );
+
+    return res.json({ sent: sentCount, total: recipients.length, announcement_id: announcementId });
+  } catch (err) {
+    console.error("Emergency alert error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/broadcasts ────────────────────────────────────────────
+
+router.get("/broadcasts", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const { limit = 20 } = req.query;
+    const result = await dbQuery(
+      `SELECT id, message, target_type, target_meta, is_emergency,
+              recipient_count, sent_count, created_at
+       FROM outbound_broadcasts
+       WHERE society_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [societyId, Number(limit)],
+    );
+    return res.json({ broadcasts: result?.rows || [] });
+  } catch (err) {
+    console.error("Broadcast history error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/events ─────────────────────────────────────────────────
+
+router.get("/events", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const result = await dbQuery(
+      `SELECT e.*,
+              COUNT(r.id)                                      AS rsvp_total,
+              COUNT(r.id) FILTER (WHERE r.response = 'YES')   AS rsvp_yes,
+              COUNT(r.id) FILTER (WHERE r.response = 'NO')    AS rsvp_no,
+              COUNT(r.id) FILTER (WHERE r.response = 'MAYBE') AS rsvp_maybe
+       FROM society_events e
+       LEFT JOIN event_rsvps r ON r.event_id = e.id
+       WHERE e.society_id = $1
+       GROUP BY e.id
+       ORDER BY e.event_date DESC`,
+      [societyId],
+    );
+    return res.json({ events: result?.rows || [] });
+  } catch (err) {
+    console.error("Secretary list events error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/secretary/events ────────────────────────────────────────────────
+
+router.post("/events", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const { title, description, event_date, location } = req.body || {};
+
+    if (!title?.trim()) return res.status(400).json({ error: "title_required" });
+    if (!event_date)    return res.status(400).json({ error: "event_date_required" });
+
+    const result = await dbQuery(
+      `INSERT INTO society_events (society_id, title, description, event_date, location)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [societyId, title.trim(), description?.trim() || null, new Date(event_date), location?.trim() || null],
+    );
+    return res.status(201).json({ event: result.rows[0] });
+  } catch (err) {
+    console.error("Secretary create event error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── PATCH /api/secretary/events/:id ──────────────────────────────────────────
+
+router.patch("/events/:id", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const { title, description, event_date, location } = req.body || {};
+
+    const result = await dbQuery(
+      `UPDATE society_events
+       SET title       = COALESCE($1, title),
+           description = COALESCE($2, description),
+           event_date  = COALESCE($3, event_date),
+           location    = COALESCE($4, location),
+           updated_at  = NOW()
+       WHERE id = $5 AND society_id = $6
+       RETURNING *`,
+      [title?.trim() || null, description?.trim() || null,
+       event_date ? new Date(event_date) : null,
+       location?.trim() || null,
+       req.params.id, societyId],
+    );
+    if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
+    return res.json({ event: result.rows[0] });
+  } catch (err) {
+    console.error("Secretary update event error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── DELETE /api/secretary/events/:id ─────────────────────────────────────────
+
+router.delete("/events/:id", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const result = await dbQuery(
+      `DELETE FROM society_events WHERE id = $1 AND society_id = $2 RETURNING id`,
+      [req.params.id, societyId],
+    );
+    if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Secretary delete event error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/polls ──────────────────────────────────────────────────
+
+router.get("/polls", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const result = await dbQuery(
+      `SELECT p.*,
+              COUNT(v.id) AS total_votes
+       FROM polls p
+       LEFT JOIN poll_votes v ON v.poll_id = p.id
+       WHERE p.society_id = $1
+       GROUP BY p.id
+       ORDER BY p.created_at DESC`,
+      [societyId],
+    );
+    return res.json({ polls: result?.rows || [] });
+  } catch (err) {
+    console.error("Secretary list polls error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/polls/:id/results ─────────────────────────────────────
+
+router.get("/polls/:id/results", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const pollRes = await dbQuery(
+      `SELECT * FROM polls WHERE id = $1 AND society_id = $2`,
+      [req.params.id, societyId],
+    );
+    if (!pollRes?.rows?.length) return res.status(404).json({ error: "not_found" });
+    const poll = pollRes.rows[0];
+
+    const votesRes = await dbQuery(
+      `SELECT option_index, COUNT(*) AS count
+       FROM poll_votes WHERE poll_id = $1
+       GROUP BY option_index`,
+      [req.params.id],
+    );
+    const voteMap = {};
+    for (const row of votesRes?.rows || []) voteMap[row.option_index] = Number(row.count);
+    const options = (poll.options || []).map((opt, i) => ({
+      label: opt, index: i, votes: voteMap[i] || 0,
+    }));
+    return res.json({ poll, options });
+  } catch (err) {
+    console.error("Secretary poll results error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/secretary/polls ─────────────────────────────────────────────────
+
+router.post("/polls", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const { question, options, closes_at } = req.body || {};
+
+    if (!question?.trim()) return res.status(400).json({ error: "question_required" });
+    if (!Array.isArray(options) || options.length < 2) {
+      return res.status(400).json({ error: "at_least_two_options_required" });
+    }
+    const cleanOptions = options.map((o) => String(o).trim()).filter(Boolean);
+    if (cleanOptions.length < 2) return res.status(400).json({ error: "at_least_two_options_required" });
+
+    const result = await dbQuery(
+      `INSERT INTO polls (society_id, question, options, closes_at)
+       VALUES ($1, $2, $3::jsonb, $4)
+       RETURNING *`,
+      [societyId, question.trim(), JSON.stringify(cleanOptions), closes_at ? new Date(closes_at) : null],
+    );
+    return res.status(201).json({ poll: result.rows[0] });
+  } catch (err) {
+    console.error("Secretary create poll error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── DELETE /api/secretary/polls/:id ──────────────────────────────────────────
+
+router.delete("/polls/:id", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const result = await dbQuery(
+      `DELETE FROM polls WHERE id = $1 AND society_id = $2 RETURNING id`,
+      [req.params.id, societyId],
+    );
+    if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Secretary delete poll error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SEC-104 — Society Expense Ledger & Other Income
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── GET /api/secretary/expenses/summary ──────────────────────────────────────
+// I&E (Income & Expenditure) statement for a given month.
+// Returns: maintenance_collected, other_income_total, expenses_total,
+//          surplus_deficit, expenses_by_category[], other_income_by_category[]
+
+router.get("/expenses/summary", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    // Default to current month
+    const month = req.query.month || new Date().toISOString().slice(0, 7); // YYYY-MM
+
+    const [maintenanceRes, otherIncomeRes, expensesRes, otherIncomeCatRes] =
+      await Promise.all([
+        // Maintenance dues collected in this month (already tracked in maintenance_dues)
+        dbQuery(
+          `SELECT COALESCE(SUM(amount), 0)::numeric AS total
+           FROM maintenance_dues
+           WHERE society_id = $1 AND due_month = $2 AND status = 'PAID'`,
+          [societyId, month],
+        ),
+        // Other income total for the month
+        dbQuery(
+          `SELECT COALESCE(SUM(amount), 0)::numeric AS total
+           FROM society_other_income
+           WHERE society_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2`,
+          [societyId, month],
+        ),
+        // Expenses by category for the month
+        dbQuery(
+          `SELECT category,
+                  COALESCE(SUM(amount), 0)::numeric AS total,
+                  COUNT(*) AS count,
+                  expense_type
+           FROM society_expenses
+           WHERE society_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2
+           GROUP BY category, expense_type
+           ORDER BY total DESC`,
+          [societyId, month],
+        ),
+        // Other income by category
+        dbQuery(
+          `SELECT category,
+                  COALESCE(SUM(amount), 0)::numeric AS total,
+                  COUNT(*) AS count
+           FROM society_other_income
+           WHERE society_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2
+           GROUP BY category
+           ORDER BY total DESC`,
+          [societyId, month],
+        ),
+      ]);
+
+    const maintenanceCollected = Number(maintenanceRes?.rows[0]?.total || 0);
+    const otherIncomeTotal     = Number(otherIncomeRes?.rows[0]?.total || 0);
+    const expensesByCategory   = expensesRes?.rows || [];
+    const incomeByCat          = otherIncomeCatRes?.rows || [];
+
+    const totalIncome    = maintenanceCollected + otherIncomeTotal;
+    const totalExpenses  = expensesByCategory.reduce((s, r) => s + Number(r.total), 0);
+    const surplusDeficit = totalIncome - totalExpenses;
+
+    return res.json({
+      month,
+      income: {
+        maintenance_collected: maintenanceCollected,
+        other_income:          otherIncomeTotal,
+        total:                 totalIncome,
+      },
+      expenses: {
+        by_category: expensesByCategory,
+        total:       totalExpenses,
+      },
+      other_income_by_category: incomeByCat,
+      surplus_deficit:          surplusDeficit,
+    });
+  } catch (err) {
+    console.error("Expenses summary error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/expenses/annual ───────────────────────────────────────
+// 12-month I&E table for a given year (useful for AGM/auditor report).
+
+router.get("/expenses/annual", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const year = req.query.year || new Date().getFullYear().toString();
+
+    const [maintenanceRows, otherIncomeRows, expenseRows] = await Promise.all([
+      dbQuery(
+        `SELECT due_month AS month, COALESCE(SUM(amount), 0)::numeric AS total
+         FROM maintenance_dues
+         WHERE society_id = $1 AND due_month LIKE $2
+           AND status = 'PAID'
+         GROUP BY due_month
+         ORDER BY due_month`,
+        [societyId, `${year}-%`],
+      ),
+      dbQuery(
+        `SELECT TO_CHAR(date, 'YYYY-MM') AS month,
+                COALESCE(SUM(amount), 0)::numeric AS total
+         FROM society_other_income
+         WHERE society_id = $1 AND EXTRACT(YEAR FROM date) = $2
+         GROUP BY month ORDER BY month`,
+        [societyId, year],
+      ),
+      dbQuery(
+        `SELECT TO_CHAR(date, 'YYYY-MM') AS month,
+                COALESCE(SUM(amount), 0)::numeric AS total_expenses,
+                category
+         FROM society_expenses
+         WHERE society_id = $1 AND EXTRACT(YEAR FROM date) = $2
+         GROUP BY month, category
+         ORDER BY month`,
+        [societyId, year],
+      ),
+    ]);
+
+    // Build month map
+    const months = {};
+    for (let m = 1; m <= 12; m++) {
+      const key = `${year}-${String(m).padStart(2, "0")}`;
+      months[key] = { month: key, maintenance: 0, other_income: 0, expenses: 0, surplus: 0 };
+    }
+    (maintenanceRows?.rows || []).forEach((r) => {
+      if (months[r.month]) months[r.month].maintenance = Number(r.total);
+    });
+    (otherIncomeRows?.rows || []).forEach((r) => {
+      if (months[r.month]) months[r.month].other_income = Number(r.total);
+    });
+    (expenseRows?.rows || []).forEach((r) => {
+      if (months[r.month]) months[r.month].expenses += Number(r.total_expenses);
+    });
+    Object.values(months).forEach((m) => {
+      m.surplus = (m.maintenance + m.other_income) - m.expenses;
+    });
+
+    return res.json({ year, months: Object.values(months) });
+  } catch (err) {
+    console.error("Expenses annual error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/expenses ──────────────────────────────────────────────
+// List expenses with optional filters: month, category, expense_type, fund_source
+
+router.get("/expenses", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const { month, category, expense_type, fund_source, limit = 200 } = req.query;
+
+    const conditions = ["e.society_id = $1"];
+    const params     = [societyId];
+    let   p          = 2;
+
+    if (month)        { conditions.push(`TO_CHAR(e.date, 'YYYY-MM') = $${p++}`); params.push(month); }
+    if (category)     { conditions.push(`e.category = $${p++}`);                 params.push(category); }
+    if (expense_type) { conditions.push(`e.expense_type = $${p++}`);             params.push(expense_type); }
+    if (fund_source)  { conditions.push(`e.fund_source = $${p++}`);              params.push(fund_source); }
+
+    params.push(Math.min(Number(limit), 500));
+
+    const result = await dbQuery(
+      `SELECT e.*,
+              a.username AS created_by_name
+       FROM society_expenses e
+       LEFT JOIN auth_accounts a ON a.id = e.created_by
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY e.date DESC, e.created_at DESC
+       LIMIT $${p}`,
+      params,
+    );
+
+    return res.json({ expenses: result?.rows || [] });
+  } catch (err) {
+    console.error("List expenses error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/secretary/expenses ─────────────────────────────────────────────
+
+router.post("/expenses", async (req, res) => {
+  try {
+    const { societyId, id: userId } = req.user;
+    const {
+      date, category, subcategory, description, amount,
+      payment_mode = "BANK_TRANSFER", fund_source = "MAINTENANCE_FUND",
+      expense_type = "OPEX", payee_name, reference_no, receipt_url, notes,
+    } = req.body;
+
+    if (!date)        return res.status(400).json({ error: "date_required" });
+    if (!category)    return res.status(400).json({ error: "category_required" });
+    if (!description) return res.status(400).json({ error: "description_required" });
+    if (!amount || Number(amount) <= 0) return res.status(400).json({ error: "invalid_amount" });
+
+    const result = await dbQuery(
+      `INSERT INTO society_expenses
+         (society_id, date, category, subcategory, description, amount,
+          payment_mode, fund_source, expense_type, payee_name, reference_no,
+          receipt_url, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       RETURNING *`,
+      [
+        societyId, date, category, subcategory || null, description, Number(amount),
+        payment_mode, fund_source, expense_type, payee_name || null,
+        reference_no || null, receipt_url || null, notes || null, userId,
+      ],
+    );
+
+    return res.status(201).json({ expense: result.rows[0] });
+  } catch (err) {
+    console.error("Add expense error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── PATCH /api/secretary/expenses/:id ────────────────────────────────────────
+
+router.patch("/expenses/:id", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const {
+      date, category, subcategory, description, amount,
+      payment_mode, fund_source, expense_type,
+      payee_name, reference_no, receipt_url, notes,
+    } = req.body;
+
+    if (amount !== undefined && Number(amount) <= 0)
+      return res.status(400).json({ error: "invalid_amount" });
+
+    const result = await dbQuery(
+      `UPDATE society_expenses
+       SET date         = COALESCE($3, date),
+           category     = COALESCE($4, category),
+           subcategory  = COALESCE($5, subcategory),
+           description  = COALESCE($6, description),
+           amount       = COALESCE($7, amount),
+           payment_mode = COALESCE($8, payment_mode),
+           fund_source  = COALESCE($9, fund_source),
+           expense_type = COALESCE($10, expense_type),
+           payee_name   = COALESCE($11, payee_name),
+           reference_no = COALESCE($12, reference_no),
+           receipt_url  = COALESCE($13, receipt_url),
+           notes        = COALESCE($14, notes),
+           updated_at   = NOW()
+       WHERE id = $1 AND society_id = $2
+       RETURNING *`,
+      [
+        req.params.id, societyId,
+        date || null, category || null, subcategory || null, description || null,
+        amount ? Number(amount) : null, payment_mode || null, fund_source || null,
+        expense_type || null, payee_name || null, reference_no || null,
+        receipt_url || null, notes || null,
+      ],
+    );
+
+    if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
+    return res.json({ expense: result.rows[0] });
+  } catch (err) {
+    console.error("Update expense error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── DELETE /api/secretary/expenses/:id ───────────────────────────────────────
+
+router.delete("/expenses/:id", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const result = await dbQuery(
+      `DELETE FROM society_expenses WHERE id = $1 AND society_id = $2 RETURNING id`,
+      [req.params.id, societyId],
+    );
+    if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Delete expense error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── GET /api/secretary/other-income ──────────────────────────────────────────
+
+router.get("/other-income", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const { month, limit = 200 } = req.query;
+
+    const conditions = ["i.society_id = $1"];
+    const params     = [societyId];
+    let p = 2;
+
+    if (month) { conditions.push(`TO_CHAR(i.date, 'YYYY-MM') = $${p++}`); params.push(month); }
+    params.push(Math.min(Number(limit), 500));
+
+    const result = await dbQuery(
+      `SELECT i.*, a.username AS created_by_name
+       FROM society_other_income i
+       LEFT JOIN auth_accounts a ON a.id = i.created_by
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY i.date DESC, i.created_at DESC
+       LIMIT $${p}`,
+      params,
+    );
+
+    return res.json({ income: result?.rows || [] });
+  } catch (err) {
+    console.error("List other income error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/secretary/other-income ─────────────────────────────────────────
+
+router.post("/other-income", async (req, res) => {
+  try {
+    const { societyId, id: userId } = req.user;
+    const {
+      date, category, description, amount,
+      payer_name, reference_no, payment_mode = "BANK_TRANSFER", notes,
+    } = req.body;
+
+    if (!date)        return res.status(400).json({ error: "date_required" });
+    if (!category)    return res.status(400).json({ error: "category_required" });
+    if (!description) return res.status(400).json({ error: "description_required" });
+    if (!amount || Number(amount) <= 0) return res.status(400).json({ error: "invalid_amount" });
+
+    const result = await dbQuery(
+      `INSERT INTO society_other_income
+         (society_id, date, category, description, amount,
+          payer_name, reference_no, payment_mode, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       RETURNING *`,
+      [
+        societyId, date, category, description, Number(amount),
+        payer_name || null, reference_no || null, payment_mode, notes || null, userId,
+      ],
+    );
+
+    return res.status(201).json({ income: result.rows[0] });
+  } catch (err) {
+    console.error("Add other income error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── DELETE /api/secretary/other-income/:id ───────────────────────────────────
+
+router.delete("/other-income/:id", async (req, res) => {
+  try {
+    const { societyId } = req.user;
+    const result = await dbQuery(
+      `DELETE FROM society_other_income WHERE id = $1 AND society_id = $2 RETURNING id`,
+      [req.params.id, societyId],
+    );
+    if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Delete other income error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
 export default router;

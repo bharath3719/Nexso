@@ -441,6 +441,108 @@ export async function ensureSchema() {
     await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_guard_accounts_username ON guard_accounts (LOWER(username))`);
     await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_guard_accounts_society ON guard_accounts (society_id)`);
 
+    // ── Broadcast log (SEC-102, SEC-105) ─────────────────────────────────────
+    await db.query(`CREATE TABLE IF NOT EXISTS outbound_broadcasts (
+      id SERIAL PRIMARY KEY,
+      society_id INTEGER REFERENCES societies(id) ON DELETE CASCADE,
+      sent_by_user_id INTEGER REFERENCES auth_accounts(id) ON DELETE SET NULL,
+      message TEXT NOT NULL,
+      target_type TEXT NOT NULL DEFAULT 'ALL',
+      target_meta JSONB,
+      is_emergency BOOLEAN DEFAULT FALSE,
+      announcement_id INTEGER REFERENCES announcements(id) ON DELETE SET NULL,
+      recipient_count INTEGER DEFAULT 0,
+      sent_count INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+
+    // ── Events and RSVP (RES-502) ────────────────────────────────────────────
+    await db.query(`CREATE TABLE IF NOT EXISTS society_events (
+      id SERIAL PRIMARY KEY,
+      society_id INTEGER REFERENCES societies(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      description TEXT,
+      event_date TIMESTAMPTZ NOT NULL,
+      location TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+
+    await db.query(`CREATE TABLE IF NOT EXISTS event_rsvps (
+      id SERIAL PRIMARY KEY,
+      event_id INTEGER REFERENCES society_events(id) ON DELETE CASCADE,
+      resident_id INTEGER REFERENCES residents(id) ON DELETE CASCADE,
+      society_id INTEGER REFERENCES societies(id),
+      response TEXT CHECK (response IN ('YES','NO','MAYBE')) NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (event_id, resident_id)
+    )`);
+
+    // ── Polls and voting (RES-503) ────────────────────────────────────────────
+    await db.query(`CREATE TABLE IF NOT EXISTS polls (
+      id SERIAL PRIMARY KEY,
+      society_id INTEGER REFERENCES societies(id) ON DELETE CASCADE,
+      question TEXT NOT NULL,
+      options JSONB NOT NULL DEFAULT '[]'::jsonb,
+      closes_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+
+    await db.query(`CREATE TABLE IF NOT EXISTS poll_votes (
+      id SERIAL PRIMARY KEY,
+      poll_id INTEGER REFERENCES polls(id) ON DELETE CASCADE,
+      resident_id INTEGER REFERENCES residents(id) ON DELETE CASCADE,
+      society_id INTEGER REFERENCES societies(id),
+      option_index INTEGER NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (poll_id, resident_id)
+    )`);
+
+    // ── Society Expenses (SEC-104) ────────────────────────────────────────────
+    await db.query(`CREATE TABLE IF NOT EXISTS society_expenses (
+      id            SERIAL PRIMARY KEY,
+      society_id    INTEGER NOT NULL REFERENCES societies(id) ON DELETE CASCADE,
+      date          DATE NOT NULL,
+      category      TEXT NOT NULL,
+      subcategory   TEXT,
+      description   TEXT NOT NULL,
+      amount        NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+      payment_mode  TEXT NOT NULL DEFAULT 'BANK_TRANSFER'
+                      CHECK (payment_mode IN ('CASH','BANK_TRANSFER','CHEQUE','UPI','OTHER')),
+      fund_source   TEXT NOT NULL DEFAULT 'MAINTENANCE_FUND'
+                      CHECK (fund_source IN ('MAINTENANCE_FUND','SINKING_FUND','CORPUS_FUND','OTHER')),
+      expense_type  TEXT NOT NULL DEFAULT 'OPEX'
+                      CHECK (expense_type IN ('OPEX','CAPEX')),
+      payee_name    TEXT,
+      reference_no  TEXT,
+      receipt_url   TEXT,
+      notes         TEXT,
+      created_by    INTEGER REFERENCES auth_accounts(id) ON DELETE SET NULL,
+      created_at    TIMESTAMPTZ DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_society_expenses_society ON society_expenses (society_id)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_society_expenses_date    ON society_expenses (date)`);
+
+    // ── Other Income (SEC-104 — income beyond maintenance dues) ───────────────
+    await db.query(`CREATE TABLE IF NOT EXISTS society_other_income (
+      id            SERIAL PRIMARY KEY,
+      society_id    INTEGER NOT NULL REFERENCES societies(id) ON DELETE CASCADE,
+      date          DATE NOT NULL,
+      category      TEXT NOT NULL,
+      description   TEXT NOT NULL,
+      amount        NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+      payer_name    TEXT,
+      reference_no  TEXT,
+      payment_mode  TEXT NOT NULL DEFAULT 'BANK_TRANSFER'
+                      CHECK (payment_mode IN ('CASH','BANK_TRANSFER','CHEQUE','UPI','OTHER')),
+      notes         TEXT,
+      created_by    INTEGER REFERENCES auth_accounts(id) ON DELETE SET NULL,
+      created_at    TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_society_other_income_society ON society_other_income (society_id)`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_society_other_income_date    ON society_other_income (date)`);
+
     await db.query("COMMIT");
     connected = true;
     log("Database schema ensured.");

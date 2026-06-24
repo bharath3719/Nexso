@@ -25,6 +25,10 @@ import { SecretaryTickets }        from "./pages/secretary/SecretaryTickets.jsx"
 import { SecretaryProfile }        from "./pages/secretary/SecretaryProfile.jsx";
 import { SecretaryMaintenance }    from "./pages/secretary/SecretaryMaintenance.jsx";
 import { SecretaryAnnouncements }  from "./pages/secretary/SecretaryAnnouncements.jsx";
+import { SecretaryEvents }         from "./pages/secretary/SecretaryEvents.jsx";
+import { SecretaryPolls }          from "./pages/secretary/SecretaryPolls.jsx";
+import { SecretaryBroadcast }      from "./pages/secretary/SecretaryBroadcast.jsx";
+import { SecretaryExpenses }      from "./pages/secretary/SecretaryExpenses.jsx";
 
 import { ResidentLayout }          from "./components/layout/ResidentLayout.jsx";
 import { ResidentDashboard }       from "./pages/resident/ResidentDashboard.jsx";
@@ -32,6 +36,9 @@ import { ResidentAnnouncements }   from "./pages/resident/ResidentAnnouncements.
 import { ResidentVisitorPasses }   from "./pages/resident/ResidentVisitorPasses.jsx";
 import { ResidentBilling }         from "./pages/resident/ResidentBilling.jsx";
 import { ResidentProfile }         from "./pages/resident/ResidentProfile.jsx";
+import { ResidentComplaints }      from "./pages/resident/ResidentComplaints.jsx";
+import { ResidentEvents }          from "./pages/resident/ResidentEvents.jsx";
+import { ResidentPolls }           from "./pages/resident/ResidentPolls.jsx";
 
 import { PublicPassPage }  from "./pages/public/PublicPassPage.jsx";
 import { GuardLogin }      from "./pages/guard/GuardLogin.jsx";
@@ -635,6 +642,9 @@ export default function App() {
             <Route path="/resident/billing"          element={<ResidentBilling />} />
             <Route path="/resident/announcements"    element={<ResidentAnnouncements />} />
             <Route path="/resident/visitor-passes"   element={<ResidentVisitorPasses />} />
+            <Route path="/resident/complaints"       element={<ResidentComplaints />} />
+            <Route path="/resident/events"           element={<ResidentEvents />} />
+            <Route path="/resident/polls"            element={<ResidentPolls />} />
             <Route path="/resident/profile"          element={<ResidentProfile onComplete={handleProfileComplete} />} />
             <Route path="*"                          element={<Navigate to="/resident" replace />} />
           </Routes>
@@ -658,6 +668,10 @@ export default function App() {
             <Route path="/secretary/residents"        element={<SecretaryResidents societyId={session.societyId} />} />
             <Route path="/secretary/tickets"          element={<SecretaryTickets />} />
             <Route path="/secretary/announcements"    element={<SecretaryAnnouncements />} />
+            <Route path="/secretary/events"           element={<SecretaryEvents />} />
+            <Route path="/secretary/polls"            element={<SecretaryPolls />} />
+            <Route path="/secretary/broadcast"        element={<SecretaryBroadcast />} />
+            <Route path="/secretary/expenses"         element={<SecretaryExpenses />} />
             <Route path="/secretary/maintenance"      element={<SecretaryMaintenance />} />
             <Route path="/secretary/profile"          element={<SecretaryProfile onLogout={handleLogout} />} />
             <Route path="*"                           element={<Navigate to="/secretary" replace />} />

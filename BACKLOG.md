@@ -1,274 +1,232 @@
-# Nexso — Resident Portal Backlog
+# Nexso — Product Backlog
 
 **Legend**
-- ✅ Done — fully built
-- 🟡 Partial — backend/DB exists, needs resident-facing API or UI
-- 🔵 Next — easy to build, data model ready
-- 🟠 Medium — new tables + API + UI needed
-- ⬜ Phase 2 — defer until MVP is live
+- ✅ Done — fully built and live
+- 🟡 Partial — backend/DB exists, UI incomplete or gaps remain
+- 🟠 Medium — new tables + API + UI needed, 1–3 day effort
+- ⬜ Phase 2 — defer until MVP is stable
 
 ---
 
 ## Epic RES-01: Resident Identity and Access
 
-### RES-101 — WhatsApp OTP login `🟠 Medium`
-> As a resident, I want to log in with my registered WhatsApp number.
+### RES-101 — WhatsApp OTP login `✅ Done`
+Residents log in with their registered WhatsApp number. OTP issued, TTL enforced, JWT minted with RESIDENT role scoped to society + unit.
 
-**What exists:** WhatsApp send API (`sendWhatsAppText`) works. `residents` table with phone numbers exists.  
-**What's needed:** OTP generation + expiry table, send OTP via WhatsApp, verify OTP → mint JWT for `RESIDENT` role in `auth_accounts`.  
-**Note:** This is the gating story for the entire resident portal. Nothing else ships without it.
+### RES-102 — Resident-unit mapping and access control `✅ Done`
+Auth middleware scopes every resident API call to the correct society_id + unit_id. RESIDENT portal_role in auth_accounts.
 
-**Acceptance criteria**
-- OTP only issued for a phone number that exists in `residents`
-- OTP expires after configurable TTL and cannot be reused
-- Success → JWT session scoped to correct society + unit
-
----
-
-### RES-102 — Resident-unit mapping and access control `🟠 Medium`
-> After login, the system maps me to my flat automatically.
-
-**What exists:** `residents` → `units` → `towers` → `societies` fully linked in DB. One OWNER + one TENANT enforced per unit.  
-**What's needed:** Add `RESIDENT` portal_role to `auth_accounts`. Middleware that scopes all resident API calls to their society_id + unit_id. Multi-unit prompt if one number is linked to more than one unit.
-
-**Acceptance criteria**
-- Session is scoped to society + unit after login
-- Multi-unit residents choose active unit before entering dashboard
-- Resident API calls that reference another unit/society return 403
-
----
-
-### RES-103 — First-time onboarding and profile setup `🔵 Next`
-> On first login, confirm or complete my profile.
-
-**What exists:** `residents` table has name, phone, email, family_members, preferred_contact, bhk, resident_type.  
-**What's needed:** `force_profile_setup` flag on auth_accounts (mirrors existing `force_password_reset` pattern). Profile edit endpoint for residents. Simple frontend form.
-
-**Acceptance criteria**
-- First login redirects to profile completion before dashboard
-- Resident can add/edit household details, vehicles, emergency contact
-- Profile is editable at any time from a profile section
+### RES-103 — First-time profile setup `✅ Done`
+`force_profile_setup` gate in App.jsx blocks all routes until the resident fills in household details. Profile editable any time from My Profile.
 
 ---
 
 ## Epic RES-02: Resident Dashboard and Communication
 
-### RES-201 — Resident home dashboard `🔵 Next`
-> A dashboard that shows what needs my attention.
+### RES-201 — Resident home dashboard `✅ Done`
+Stat cards: open complaints, pending/overdue dues, active visitor passes, announcements, open complaints. Quick-action buttons to each module. Urgent announcement banner.
 
-**What exists:** All underlying data exists — tickets, dues, visitor passes (once built). Admin dashboard pattern in `Dashboard.jsx` to follow.  
-**What's needed:** Resident-scoped versions of existing stats endpoints. New `ResidentDashboard.jsx` page.
-
-**Acceptance criteria**
-- Shows: open complaints, pending dues, active visitor passes, latest announcements
-- Each card links to its module
-- Meaningful empty states when a module has no data
-
----
-
-### RES-202 — Secretary announcements feed `🟠 Medium`
-> Receive official announcements from the secretary.
-
-**What exists:** Nothing.  
-**What's needed:** New `announcements` table (society_id, title, body, category, priority, audience, pinned, created_by, created_at). Admin publish endpoint. Resident read endpoint (filtered by society, sorted pinned-first). Read tracking per unit for critical notices.
-
-**Acceptance criteria**
-- Admins publish with category, priority, audience targeting
-- Residents see reverse-chronological feed, pinned urgent notices first
-- Critical announcements track read status per unit
-
----
+### RES-202 — Secretary announcements feed `✅ Done`
+Secretary creates/pins/categorises announcements. Resident sees them in reverse-chrono order, pinned and urgent first.
 
 ### RES-203 — Notification center and preferences `⬜ Phase 2`
-> See all updates in one place and control non-critical alerts.
-
-**What exists:** WhatsApp + email outbound notifications only. No in-app notification store.  
-**What's needed:** `notifications` table, in-app unread count, preference toggles per resident. Significant new infrastructure.
+In-app notification store, unread count badge, per-resident preference toggles. Significant infrastructure not yet built.
 
 ---
 
 ## Epic RES-03: Visitor Management
 
-### RES-301 — Create visitor pass `🟠 Medium`
-> Create a visitor pass so my guest can enter without delays.
+### RES-301 — Create visitor pass `✅ Done`
+Resident creates a pass with visitor name, phone, purpose, vehicle, validity window. Unique pass_code generated.
 
-**What exists:** Nothing.  
-**What's needed:** `visitor_passes` table (unit_id, society_id, visitor_name, visitor_phone, purpose, valid_from, valid_until, vehicle, pass_code UUID, status: ACTIVE/USED/EXPIRED/REVOKED, created_by).
+### RES-302 — Generate and share visitor card `✅ Done`
+Share pass URL via WhatsApp, Gmail, Email app, or native share. Copy link. Pass code shown as monospace chip.
 
-**Acceptance criteria**
-- Required fields validated before pass is created
-- Unique pass_code generated per visit
-- Validity window enforced
+### RES-303 — Security gate verification `✅ Done`
+Guard portal logs in with username/password. Looks up pass by code or phone. One-tap "Mark Used". Entry logged.
 
----
-
-### RES-302 — Generate and share visitor card `🟠 Medium`
-> A digital visitor card I can send to my guest on WhatsApp.
-
-**What exists:** `sendWhatsAppDocument` and `sendWhatsAppText` in `notifications.js`. PDF generation via `pdfkit` already used for bills.  
-**What's needed:** Visitor card PDF/image generator. Share via WhatsApp endpoint reusing existing notification service.
-
-**Acceptance criteria**
-- Card shows society, unit, visitor details, validity window, QR/pass code
-- Resident can send to visitor's WhatsApp from portal
-- Fallback: copy link or download pass if send fails
-
----
-
-### RES-303 — Security verification and entry/exit logging `🟠 Medium`
-> Verify a visitor pass at the gate.
-
-**What exists:** Nothing. No SECURITY portal role exists yet.  
-**What's needed:** `SECURITY` portal_role. Verification endpoint (by QR scan, phone, or pass code). Entry/exit timestamp columns on `visitor_passes`. Resident notification on arrival/exit (WhatsApp send exists).
-
-**Acceptance criteria**
-- Verify by QR code, mobile number, or pass code
-- Clear valid / expired / revoked / already-used states shown
-- Entry + exit timestamped, resident notified on both events
-
----
-
-### RES-304 — Visitor history and revoke pass `🔵 Next`
-> View and manage past visitor passes.
-
-**What exists:** Once RES-301 table is built, this is just a filtered list + a status update endpoint.  
-**What's needed:** `GET /api/visitor-passes` with filters. `PATCH /api/visitor-passes/:id/revoke`.
-
-**Acceptance criteria**
-- Filterable history: upcoming / active / used / expired / revoked
-- Resident can revoke any active or unused pass
-- Revoked passes blocked immediately at verification
+### RES-304 — Visitor history and revoke pass `✅ Done`
+Resident sees all passes with status filters (ACTIVE / USED / EXPIRED / REVOKED). Can revoke any active pass.
 
 ---
 
 ## Epic RES-04: Service Requests and Billing
 
-### RES-401 — Raise a complaint from the portal `🟡 Partial`
-> Create a complaint without calling the office.
+### RES-401 — Raise a complaint from the portal `✅ Done`
+Category picker (Plumbing, Electrical, Lift, etc.), description, Normal/Urgent priority. Returns ticket ID. Ticket visible in secretary and admin views.
 
-**What exists:** Full ticket backend (`tickets` table, status machine, `createTicketIfNeeded` service). Currently residents raise tickets only via WhatsApp.  
-**What's needed:** Resident-scoped `POST /api/resident/tickets` endpoint that calls the same creation service. Resident-facing UI form with category picker + description + optional photo upload.
+### RES-402 — Track complaint status `✅ Done`
+"Track Status" button on each complaint card opens a bottom sheet: 5-step stepper (Raised → Assigned → In Progress → Resolved → Closed) + chronological activity log with actor and timestamp.
 
-**Acceptance criteria**
-- Category, description, optional attachments
-- Returns ticket ID on success
-- Ticket visible in both resident and admin workflows
+### RES-403 — View dues, invoices, and receipts `✅ Done`
+Pending and history tabs. Summary cards (pending, overdue, paid count). "Pay Now" link when secretary has set a payment URL. "Receipt" PDF download for paid months.
 
----
+### RES-404 — Post-resolution service rating `🟠 Medium`
+> After a ticket is resolved, resident rates the job 1–5 stars with an optional comment.
 
-### RES-402 — Track complaint status and add updates `🟡 Partial`
-> See ticket progress and add follow-up.
-
-**What exists:** `tickets`, `ticket_messages`, `ticket_activity_logs` all populated. Admin sees all of this in `Complaints.jsx`.  
-**What's needed:** `GET /api/resident/tickets` scoped to requesting resident's unit. `POST /api/resident/tickets/:id/messages` for resident comments. WhatsApp notification on status change already works.
+**What's needed:** `ticket_ratings` table (ticket_id, resident_id, rating 1-5, comment, created_at). `POST /api/resident/tickets/:id/rate` endpoint (only allowed once, only on RESOLVED/CLOSED tickets). Rating prompt in the complaint detail bottom sheet when status is RESOLVED or CLOSED. Secretary/admin view showing average rating per vendor and per category.
 
 **Acceptance criteria**
-- Resident sees status, assigned vendor (when visible), activity timeline
-- Can add comments/media while ticket is open or in-progress
-- Notified on every status change
+- Rating available only after RESOLVED or CLOSED
+- One rating per ticket, cannot be changed after submission
+- Secretary dashboard shows vendor avg rating and category avg
 
 ---
 
-### RES-403 — View dues, invoices, and receipts `🟡 Partial`
-> See my payment obligations and receipts.
+## Epic RES-05: Community and Social Engagement
 
-**What exists:** `maintenance_dues` fully populated with amounts, due dates, statuses, Razorpay payment links, PDF bills. `SecretaryMaintenance.jsx` shows this for admins.  
-**What's needed:** `GET /api/resident/dues` scoped to the resident's unit. Resident-facing UI. Razorpay payment link passthrough (links already stored on the due row).
+### RES-501 — Moderated community feed `⬜ Phase 2`
+Residents post text/photos; secretary moderates. No existing infrastructure.
+
+### RES-502 — Events and RSVP `✅ Done`
+Secretary creates events (title, date/time, location, description). Residents RSVP Going / Maybe / Not Going. Secretary sees live RSVP counts. Events split into Upcoming / Past.
+
+### RES-503 — Polls and surveys `✅ Done`
+Secretary creates polls (question, 2–6 options, optional close date). Residents vote once on open polls. Secretary views bar-chart results. Closed polls show final results to residents.
+
+### RES-504 — Buy, sell, and giveaway board `⬜ Phase 2`
+Classifieds board within society. Deferred.
+
+---
+
+## Epic RES-06: Convenience and Lifestyle Modules
+
+### RES-601 — Amenity booking `🟠 Medium`
+> Reserve the clubhouse, swimming pool, party hall, or gym slot.
+
+**What's needed:** `amenities` table (society_id, name, capacity, rules). `amenity_bookings` table (amenity_id, unit_id, resident_id, date, slot_from, slot_until, status: PENDING/APPROVED/REJECTED/CANCELLED). Secretary approves or auto-approves. Calendar view for secretary. Resident sees own upcoming bookings.
 
 **Acceptance criteria**
-- Pending dues show amount + due date + pay link
-- Overdue dues clearly highlighted
-- Paid items in history with receipt/PDF access
+- No double-booking for the same amenity slot
+- Secretary can approve, reject, or set amenities to auto-approve
+- Resident notified on approval/rejection
+- Resident can cancel their own upcoming booking
 
----
+### RES-602 — Society documents library `🟠 Medium`
+> Access meeting minutes, society rules, maintenance reports, and circulars.
 
-### RES-404 — Payment reminders and service feedback `🟡 Partial`
-> Reminders for dues and a way to rate resolved requests.
-
-**What exists:** `maintenanceScheduler.js` already sends WhatsApp reminders 7 days before due date and marks overdue. Ticket resolved/closed status exists.  
-**What's needed:** Post-resolution rating prompt (new `ticket_ratings` table: ticket_id, rating 1-5, comment). Aggregate feedback view for admins.
+**What's needed:** `society_documents` table (society_id, title, category, file_url, file_size, uploaded_by, created_at). Secretary uploads PDF/image via multipart or external storage URL. Resident browses by category. Search by title.
 
 **Acceptance criteria**
-- Reminders fire before due date and after overdue — ✅ already works
-- Rating available only after ticket is RESOLVED or CLOSED
-- Admin can view ratings by category, vendor, or service type
+- Secretary can upload, categorise, and delete documents
+- Residents can browse and download
+- Categories: Rules & Bye-laws, Financials, Minutes, Notices, Others
+
+### RES-603 — Domestic help and staff access `⬜ Phase 2`
+Registry of maids, drivers, and helpers with unit associations. Out of scope for now.
+
+### RES-604 — Packages and lost-and-found `⬜ Phase 2`
+Guard logs parcel arrivals; resident gets notified. Deferred.
 
 ---
 
-## Epic RES-05: Community and Social Engagement `⬜ Phase 2`
+## Epic SEC-01: Secretary Operations (New)
 
-### RES-501 — Moderated community feed
-### RES-502 — Events and RSVP
-### RES-503 — Polls and surveys
-### RES-504 — Buy, sell, and giveaway board
+These are pain points a society secretary faces daily that Nexso doesn't yet solve.
 
-**Status:** Defer. No existing infrastructure. Build after MVP resident portal is live and adopted.
+### SEC-101 — Secretary ticket management `🟠 Medium`
+> Secretary can assign tickets to vendors and mark them resolved — not just view them.
+
+**What's needed:** `PATCH /api/secretary/tickets/:id` endpoint to change status (OPEN → ASSIGNED → IN_PROGRESS → RESOLVED) and set `assigned_vendor_id`. Secretary vendor dropdown (from approved vendors). Update `SecretaryTickets.jsx` to show action buttons inline.
+
+**Acceptance criteria**
+- Secretary can assign any open ticket to an approved vendor
+- Can advance status (but not skip; machine enforced)
+- Resident notified via WhatsApp on assignment (reuse existing notification)
+- Status changes logged in ticket_activity_logs
+
+### SEC-102 — Broadcast messaging `🟠 Medium`
+> Send a WhatsApp message to all residents, or a filtered subset (overdue payers, specific tower, etc.).
+
+**What's needed:** `POST /api/secretary/broadcast` endpoint. Filters: all, overdue-only, specific tower/floor, specific unit list. Body: free-text message. Log broadcasts to an `outbound_broadcasts` table with sent count + timestamp. Frontend composer in secretary portal.
+
+**Acceptance criteria**
+- Target filters: All residents / Tower / Overdue payers / Custom unit list
+- Preview recipient count before sending
+- Message sent via existing WhatsApp notification service
+- Broadcast log shows date, message, recipient count, status
+
+### SEC-103 — Visitor pass oversight `🟠 Medium`
+> Secretary sees all active visitor passes across the society, can revoke suspicious ones.
+
+**What's needed:** `GET /api/secretary/visitor-passes` with filters (status, unit, date range). `PATCH /api/secretary/visitor-passes/:id/revoke` secretary-scoped. Secretary passes view in portal: table of active passes, unit, visitor name, validity, revoke button.
+
+**Acceptance criteria**
+- Secretary sees all passes (not just one unit)
+- Can revoke any active pass with a reason
+- Revocation reflected immediately at gate
+
+### SEC-104 — Expense ledger and financial summary `🟠 Medium`
+> Track society expenses beyond maintenance dues: security guard salary, generator fuel, cleaning, repairs.
+
+**What's needed:** `society_expenses` table (society_id, month, category, description, amount, receipt_url, created_by, created_at). `GET/POST/DELETE /api/secretary/expenses`. Secretary expense entry form. Monthly P&L summary: maintenance collected vs. total expenses vs. balance. CSV export.
+
+**Acceptance criteria**
+- Secretary logs expenses with category (Salary, Utilities, Repairs, Admin, Other) and amount
+- Monthly summary shows total collected, total spent, closing balance
+- Optional receipt URL or note
+- CSV export of expenses for any month range
+
+### SEC-105 — Emergency broadcast `🟠 Medium`
+> One-click send of an urgent alert to all residents in the society (water cut, fire drill, power outage).
+
+**What's needed:** Pre-set emergency message templates (Water cut, Power outage, Fire drill, Security alert, Custom). Single confirm-and-send flow. Uses broadcast infrastructure from SEC-102 but with a priority flag. Auto-creates a pinned URGENT announcement alongside the WhatsApp send.
+
+**Acceptance criteria**
+- Prominent "Emergency Alert" button on secretary dashboard
+- Confirmation step before sending (shows recipient count)
+- Simultaneously: sends WhatsApp to all residents + creates pinned URGENT announcement
+- Log entry in broadcasts table
+
+### SEC-106 — Vendor ratings and performance view `🟠 Medium`
+> Secretary sees which vendors are performing well based on resident feedback (after RES-404 is built).
+
+**What's needed:** Aggregate query over `ticket_ratings` joined with `vendors`. Secretary dashboard widget: top/bottom vendors by avg rating, recent ratings feed, rating trend by month. Depends on RES-404.
+
+**Acceptance criteria**
+- Shows avg rating per vendor (only vendors with ≥3 ratings shown)
+- Filterable by date range and category
+- Individual rating comments visible to secretary
 
 ---
 
-## Epic RES-06: Convenience and Lifestyle Modules `⬜ Phase 2`
+## Epic RES-07: Society Admin Controls
 
-### RES-601 — Amenity booking
-### RES-602 — Society documents library
-### RES-603 — Domestic help and staff access
-### RES-604 — Packages and lost-and-found
+### RES-701 — Secretary publishing console `✅ Done`
+Announcements (create/edit/delete/pin), Events (create/delete, RSVP view), Polls (create/delete, results) all live in the secretary portal.
 
-**Status:** Defer. All require new tables, flows, and UI. RES-602 (documents) is the quickest of the four — revisit first.
+### RES-702 — Role permissions and module toggles `🟠 Medium`
+> Society admin controls which modules are active for their society.
 
----
+**What's needed:** `society_module_settings` table (society_id, module_key, enabled). Default all enabled. Settings page in secretary portal. Frontend reads settings on load and hides nav links + routes for disabled modules.
 
-## Epic RES-07: Society Admin Controls and Governance
+**Acceptance criteria**
+- Secretary can toggle: Complaints, Visitor Passes, Events, Polls, Documents, Amenity Booking
+- Toggling off hides the module from resident nav immediately
+- Disabled module routes return 403 from API
 
-### RES-701 — Secretary and committee publishing console `🟡 Partial`
-> One place to publish resident-facing content.
-
-**What exists:** Secretary portal has resident management, ticket view, maintenance management. No announcement/event/poll publishing.  
-**What's needed:** Announcement CRUD in secretary portal (depends on RES-202). Event + poll publishing deferred to Phase 2.
-
----
-
-### RES-702 — Role permissions and module toggles `🟡 Partial`
-> Control which roles access which modules.
-
-**What exists:** `portal_role` on `auth_accounts` (NEXSO_ADMIN, SOCIETY_ADMIN, VENDOR). `requireAdmin` and `requireAuth` middleware. Society-level `maintenance_enabled` toggle.  
-**What's needed:** Add RESIDENT + SECURITY roles. Per-society module toggle table (`society_module_settings`). Frontend respects toggles to hide disabled modules.
+### RES-703 — Moderation, audit logs, and analytics `⬜ Phase 2`
+General audit log, moderation queue for community content, adoption analytics. Deferred.
 
 ---
 
-### RES-703 — Moderation, audit logs, and resident analytics `⬜ Phase 2`
-> Governance tools, audit trail, and adoption analytics.
-
-**What exists:** `ticket_activity_logs` for ticket audit. Nothing broader.  
-**What's needed:** General audit log table. Moderation queue (depends on community features). Analytics dashboard. Defer until Phase 2 features exist.
-
----
-
-## Implementation Order
+## Suggested Build Order (from here)
 
 ```
-Sprint 1 — Foundation (nothing else works without these)
-  RES-101  WhatsApp OTP login
-  RES-102  Resident-unit mapping + RESIDENT role
+Next sprint — high-value, moderate effort
+  SEC-101  Secretary ticket management (assign + status update)
+  SEC-102  Broadcast messaging
+  RES-404  Post-resolution service rating
+  RES-602  Society documents library
 
-Sprint 2 — Core resident experience (data already exists)
-  RES-401  Raise complaint from portal
-  RES-402  Track complaint status
-  RES-403  View dues and receipts
-  RES-201  Resident dashboard
-  RES-103  Profile setup
+Following sprint — operations + engagement
+  SEC-103  Visitor pass oversight
+  SEC-104  Expense ledger
+  SEC-105  Emergency broadcast
+  RES-601  Amenity booking
 
-Sprint 3 — Visitor management
-  RES-301  Create visitor pass
-  RES-302  Generate and share visitor card
-  RES-303  Security verification + entry/exit log
-  RES-304  Visitor history + revoke
-
-Sprint 4 — Communication and feedback
-  RES-202  Announcements feed
-  RES-404  Service feedback / ratings
-  RES-701  Secretary publishing console
-  RES-702  Role permissions + module toggles
-
-Phase 2 — Community, convenience, governance
-  RES-203, RES-501–504, RES-601–604, RES-703
+Later — governance + polish
+  SEC-106  Vendor ratings view (needs RES-404 first)
+  RES-702  Module toggles
+  RES-203  Notification center
 ```
