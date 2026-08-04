@@ -229,14 +229,17 @@ router.get("/maintenance/dues", async (req, res) => {
     const { residentId, societyId } = req.user;
     const { type } = req.query;
 
+    // PENDING_VERIFICATION counts as unsettled — the resident has paid but the
+    // society hasn't confirmed it yet, so it belongs with the pending dues.
     let statuses;
-    if (type === "pending")  statuses = ["PENDING", "OVERDUE"];
+    if (type === "pending")  statuses = ["PENDING", "OVERDUE", "PENDING_VERIFICATION"];
     else if (type === "history") statuses = ["PAID", "WAIVED"];
-    else statuses = ["PENDING", "OVERDUE", "PAID", "WAIVED"];
+    else statuses = ["PENDING", "OVERDUE", "PENDING_VERIFICATION", "PAID", "WAIVED"];
 
     const result = await dbQuery(
       `SELECT md.id, md.due_month, md.amount, md.due_date, md.status,
               md.payment_reference, md.payment_date, md.payment_link,
+              md.claimed_utr, md.claimed_at,
               md.base_amount, md.expense_share, md.previously_due,
               md.interest_amount, md.breakdown,
               mi.invoice_number

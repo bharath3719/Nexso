@@ -5,7 +5,7 @@ import { api } from "../../services/api.js";
 import {
   currentMonth, Toast, StatsGrid, DuesTable,
   useShowToast, ErrorBanner, MonthInput, StatusFilterSelect, MaintenanceConfigBar,
-  GenerateDuesButtons, updateDue,
+  GenerateDuesButtons, updateDue, computeUpdatedStats,
 } from "../../components/maintenance/MaintenanceShared.jsx";
 import { ExpenseSheetTab } from "../../components/maintenance/ExpenseSheetTab.jsx";
 import { AccountTallyTab } from "../../components/maintenance/AccountTallyTab.jsx";
@@ -39,6 +39,13 @@ function CloseMonthModal({ month, stats, onClose, onConfirm, closing }) {
               <li>Arrears carry forward automatically to next month's bills</li>
             </ul>
           </div>
+          {stats?.pendingVerification > 0 && (
+            <div style={{ background: "#f5f3ff", border: "1px solid #8b5cf6", borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#5b21b6" }}>
+              <strong>{stats.pendingVerification} payment{stats.pendingVerification > 1 ? "s" : ""} still awaiting verification.</strong>
+              {" "}Confirm them against your bank statement first — once the month is
+              closed you'll have to reopen it to record them.
+            </div>
+          )}
           {stats && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16, fontSize: 13 }}>
               <div style={{ background: "#f0fdf4", padding: "8px 12px", borderRadius: 6 }}>
@@ -284,6 +291,35 @@ export function SecretaryMaintenance() {
     [showToast],
   );
 
+  // Confirm / reject a UPI payment the resident reported via their pay link.
+  const applyDue = useCallback((updated) => {
+    setDues((prev) => {
+      const next = prev.map((d) => (d.id === updated.id ? { ...d, ...updated } : d));
+      setStats(computeUpdatedStats(next));
+      return next;
+    });
+  }, []);
+
+  const handleVerify = useCallback(async (id) => {
+    try {
+      const data = await api.secretary.maintenance.verifyPayment(id);
+      applyDue(data.due);
+      showToast("Payment confirmed ✓ — resident notified.");
+    } catch {
+      showToast("Failed to confirm payment.");
+    }
+  }, [applyDue, showToast]);
+
+  const handleReject = useCallback(async (id, reason) => {
+    try {
+      const data = await api.secretary.maintenance.rejectPayment(id, reason);
+      applyDue(data.due);
+      showToast("Marked unverified — due is pending again.");
+    } catch {
+      showToast("Failed to reject payment.");
+    }
+  }, [applyDue, showToast]);
+
   const isOff    = !config.maintenance_enabled;
   const isClosed = closure?.status === "CLOSED";
 
@@ -391,6 +427,8 @@ export function SecretaryMaintenance() {
               : `No dues for ${month}. Build an expense sheet, then click "Generate Dues".`}
             onUpdate={handleUpdate}
             onDownloadPdf={handleDownloadInvoicePdf}
+            onVerify={handleVerify}
+            onReject={handleReject}
           />
         </>
       )}

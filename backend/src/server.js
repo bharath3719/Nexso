@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { isDbConnected } from "./db/index.js";
+import { activeProvider, isPaymentConfigured } from "./services/paymentLinks.js";
 import { startMaintenanceScheduler } from "./services/maintenanceScheduler.js";
 import { startTicketEscalationScheduler } from "./services/ticketEscalationScheduler.js";
 
@@ -25,6 +26,7 @@ import razorpayWebhookRouter from "./routes/razorpayWebhook.js";
 import residentRouter        from "./routes/resident.js";
 import guardRouter           from "./routes/guard.js";
 import passesRouter          from "./routes/passes.js";
+import payRouter             from "./routes/pay.js";
 
 const app = express();
 
@@ -111,6 +113,14 @@ app.get("/health", (req, res) => {
     status: "ok",
     db: isDbConnected() ? "connected" : "disconnected",
     uptimeSeconds: Math.round(process.uptime()),
+    // Which payment rail this deploy will actually use, and whether it can mint
+    // links. No secrets — just the resolved provider and the public origin that
+    // resident pay links are built from.
+    payments: {
+      provider:   activeProvider(),
+      configured: isPaymentConfigured(),
+      publicUrl:  process.env.BACKEND_PUBLIC_URL || null,
+    },
   });
 });
 
@@ -130,6 +140,10 @@ app.use("/api/maintenance",  maintenanceRouter);
 app.use("/api/resident",     residentRouter);
 app.use("/api/guard",        guardRouter);
 app.use("/api/passes",       passesRouter);
+
+// Public resident-facing pay page. Server-rendered, so it must be mounted
+// before the SPA static handler and its "*" fallback below.
+app.use("/pay",              payRouter);
 
 // ── Background scheduler ──────────────────────────────────────────────────────
 // Only start in production / when the DB is (or will be) available.

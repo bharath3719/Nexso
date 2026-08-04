@@ -20,7 +20,7 @@ import { requireAdmin } from "../middleware/auth.js";
 import { sendWhatsAppText, sendWhatsAppDocument } from "../services/notifications.js";
 import { saveBillAndGetUrl } from "../services/billPdf.js";
 import { sendMaintenanceReminderEmail, isEmailConfigured } from "../services/email.js";
-import { createPaymentLink, isRazorpayConfigured } from "../services/razorpayService.js";
+import { createDuePaymentLink, activeProvider, isPaymentConfigured } from "../services/paymentLinks.js";
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -144,12 +144,13 @@ router.post("/generate", async (req, res) => {
       return res.json({ created: 0, skipped: 0, message: "No active maintenance settings found." });
     }
 
-    // Fetch society info needed for Razorpay link description
+    // Fetch society info needed for the payment link
     const socRes = await dbQuery(
-      `SELECT name FROM societies WHERE id = $1`, [societyId],
+      `SELECT name, maintenance_upi_id FROM societies WHERE id = $1`, [societyId],
     );
-    const societyName = socRes?.rows?.[0]?.name || "Society";
-    const rzpEnabled  = isRazorpayConfigured();
+    const societyName  = socRes?.rows?.[0]?.name || "Society";
+    const societyUpiId = socRes?.rows?.[0]?.maintenance_upi_id || null;
+    const payEnabled   = isPaymentConfigured();
 
     let created = 0;
     let skipped = 0;
@@ -183,9 +184,9 @@ router.post("/generate", async (req, res) => {
       const dueId = r.rows[0].id;
       created++;
 
-      // Create Razorpay payment link if configured
-      if (rzpEnabled) {
-        const link = await createPaymentLink({
+      // Mint a payment link (Razorpay or UPI) — persisted by the service
+      if (payEnabled) {
+        await createDuePaymentLink({
           dueId, societyId, residentId: occupant.id,
           residentName:  occupant.name  || "Resident",
           residentEmail: occupant.email || null,
@@ -193,20 +194,15 @@ router.post("/generate", async (req, res) => {
           amount:     s.amount,
           dueMonth:   targetMonth,
           dueDate:    dueDateStr,
-          societyName,
+          societyName, societyUpiId,
         });
-        if (link) {
-          await dbQuery(
-            `UPDATE maintenance_dues
-             SET razorpay_payment_link_id = $1, payment_link = $2
-             WHERE id = $3`,
-            [link.id, link.short_url, dueId],
-          );
-        }
       }
     }
 
-    return res.json({ created, skipped, month: targetMonth, razorpay: rzpEnabled });
+    return res.json({
+      created, skipped, month: targetMonth,
+      paymentProvider: payEnabled ? activeProvider() : null,
+    });
   } catch (err) {
     console.error("Maintenance generate error:", err);
     return res.status(500).json({ error: "internal_error" });

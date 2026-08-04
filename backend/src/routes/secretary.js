@@ -19,7 +19,8 @@ import { dbQuery } from "../db/index.js";
 import { requireSecretary } from "../middleware/auth.js";
 import { sendWhatsAppText } from "../services/notifications.js";
 import { sendMaintenanceReminderEmail, isEmailConfigured } from "../services/email.js";
-import { createPaymentLink, isRazorpayConfigured } from "../services/razorpayService.js";
+import { createDuePaymentLink, activeProvider, isPaymentConfigured } from "../services/paymentLinks.js";
+import { isValidVpa } from "../services/upiService.js";
 import {
   generateBillPdf, generateCollectionRegisterPdf, generateClosurePdf,
   getOrCreateInvoiceNumber, computeBill,
@@ -586,6 +587,7 @@ router.get("/maintenance", async (req, res) => {
       total:           dues.length,
       paid:            dues.filter((d) => d.status === "PAID").length,
       pending:         dues.filter((d) => d.status === "PENDING").length,
+      pendingVerification: dues.filter((d) => d.status === "PENDING_VERIFICATION").length,
       overdue:         dues.filter((d) => d.status === "OVERDUE").length,
       waived:          dues.filter((d) => d.status === "WAIVED").length,
       totalAmount:     dues.reduce((s, d) => s + Number(d.amount || 0), 0),
@@ -614,7 +616,7 @@ router.patch("/maintenance/dues/:id", async (req, res) => {
     const { id }    = req.params;
     const { status, payment_reference, notes } = req.body || {};
 
-    const VALID = ["PENDING", "PAID", "OVERDUE", "WAIVED"];
+    const VALID = ["PENDING", "PENDING_VERIFICATION", "PAID", "OVERDUE", "WAIVED"];
     if (status && !VALID.includes(status)) {
       return res.status(400).json({ error: "invalid_status" });
     }
@@ -658,6 +660,174 @@ router.patch("/maintenance/dues/:id", async (req, res) => {
   }
 });
 
+/**
+ * True when the due's month has been formally closed — the books are locked and
+ * no status change may be recorded against it.
+ */
+async function isDueMonthClosed(dueId, societyId) {
+  const r = await dbQuery(
+    `SELECT mc.status
+       FROM maintenance_dues md
+       JOIN monthly_closures mc
+         ON mc.society_id = md.society_id AND mc.month = md.due_month
+      WHERE md.id = $1 AND md.society_id = $2`,
+    [dueId, societyId],
+  );
+  return r?.rows?.[0]?.status === "CLOSED";
+}
+
+// ── GET /api/secretary/maintenance/pending-verification ───────────────────────
+// Dues where the resident has paid by UPI and declared a UTR, waiting for the
+// secretary to match it against the society's bank statement.
+
+router.get("/maintenance/pending-verification", async (req, res) => {
+  try {
+    const result = await dbQuery(
+      `SELECT md.id, md.amount, md.due_month, md.due_date,
+              md.claimed_utr, md.claimed_at, md.payment_mode,
+              r.name AS resident_name, r.phone AS resident_phone,
+              u.unit_number,
+              COALESCE(td.name, tf.name) AS tower_name
+         FROM maintenance_dues md
+         JOIN residents r ON r.id = md.resident_id
+         LEFT JOIN units  u  ON u.id  = r.unit_id
+         LEFT JOIN towers td ON td.id = u.tower_id
+         LEFT JOIN floors f  ON f.id  = u.floor_id
+         LEFT JOIN towers tf ON tf.id = f.tower_id
+        WHERE md.society_id = $1 AND md.status = 'PENDING_VERIFICATION'
+        ORDER BY md.claimed_at ASC`,
+      [req.user.societyId],
+    );
+    return res.json({ dues: result?.rows || [] });
+  } catch (err) {
+    console.error("Secretary pending-verification error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/secretary/maintenance/dues/:id/verify ───────────────────────────
+// Confirms a claimed UPI payment → PAID. The UTR becomes the payment reference.
+
+router.post("/maintenance/dues/:id/verify", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+
+    if (await isDueMonthClosed(req.params.id, societyId)) {
+      return res.status(403).json({
+        error: "month_closed",
+        message: "This month is closed. Reopen it before confirming payments.",
+      });
+    }
+
+    const result = await dbQuery(
+      `UPDATE maintenance_dues
+          SET status            = 'PAID',
+              payment_date      = COALESCE(payment_date, NOW()),
+              payment_reference = COALESCE(payment_reference,
+                                    CASE WHEN claimed_utr IS NOT NULL
+                                         THEN 'UTR:' || claimed_utr || ' | via UPI'
+                                         ELSE NULL END),
+              payment_mode      = COALESCE(payment_mode, 'UPI'),
+              verified_by       = $1,
+              verified_at       = NOW(),
+              updated_at        = NOW()
+        WHERE id = $2 AND society_id = $3 AND status = 'PENDING_VERIFICATION'
+        RETURNING *`,
+      [req.user.id, req.params.id, societyId],
+    );
+
+    if (!result?.rows?.length) {
+      return res.status(404).json({ error: "not_found_or_not_pending_verification" });
+    }
+
+    const due = result.rows[0];
+
+    // Tell the resident their payment is confirmed — closes the loop that
+    // started with the pay link.
+    const r = await dbQuery(
+      `SELECT r.phone, r.name, s.name AS society_name
+         FROM residents r JOIN societies s ON s.id = $2
+        WHERE r.id = $1`,
+      [due.resident_id, societyId],
+    );
+    const resident = r?.rows?.[0];
+    if (resident?.phone) {
+      const amountFmt = Number(due.amount).toLocaleString("en-IN");
+      sendWhatsAppText(
+        resident.phone,
+        `✅ Hi ${resident.name}, your maintenance payment of ₹${amountFmt} for ` +
+        `${due.due_month} has been confirmed. Thank you!\n\n— ${resident.society_name} Management`,
+      ).catch(() => {});
+    }
+
+    return res.json({ due });
+  } catch (err) {
+    console.error("Secretary verify payment error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/secretary/maintenance/dues/:id/reject ───────────────────────────
+// The claimed UTR doesn't appear in the bank statement → back to PENDING so the
+// resident can pay (or re-declare) using the same link.
+
+router.post("/maintenance/dues/:id/reject", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+    const reason    = (req.body?.reason || "").trim() || "Payment could not be verified";
+
+    if (await isDueMonthClosed(req.params.id, societyId)) {
+      return res.status(403).json({
+        error: "month_closed",
+        message: "This month is closed. Reopen it before rejecting payments.",
+      });
+    }
+
+    const result = await dbQuery(
+      `UPDATE maintenance_dues
+          SET status      = 'PENDING',
+              notes       = COALESCE(notes || E'\\n', '') ||
+                            'Rejected ' || TO_CHAR(NOW(), 'YYYY-MM-DD') ||
+                            ' (UTR ' || COALESCE(claimed_utr, '—') || '): ' || $1,
+              claimed_utr = NULL,
+              claimed_at  = NULL,
+              verified_by = $2,
+              verified_at = NOW(),
+              updated_at  = NOW()
+        WHERE id = $3 AND society_id = $4 AND status = 'PENDING_VERIFICATION'
+        RETURNING *`,
+      [reason, req.user.id, req.params.id, societyId],
+    );
+
+    if (!result?.rows?.length) {
+      return res.status(404).json({ error: "not_found_or_not_pending_verification" });
+    }
+
+    const due = result.rows[0];
+
+    const r = await dbQuery(
+      `SELECT r.phone, r.name, s.name AS society_name
+         FROM residents r JOIN societies s ON s.id = $2
+        WHERE r.id = $1`,
+      [due.resident_id, societyId],
+    );
+    const resident = r?.rows?.[0];
+    if (resident?.phone) {
+      sendWhatsAppText(
+        resident.phone,
+        `⚠️ Hi ${resident.name}, we couldn't verify your maintenance payment for ` +
+        `${due.due_month}.\n\nReason: ${reason}\n\nPlease check with the society ` +
+        `office before paying again.\n\n— ${resident.society_name} Management`,
+      ).catch(() => {});
+    }
+
+    return res.json({ due });
+  } catch (err) {
+    console.error("Secretary reject payment error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
 // ── POST /api/secretary/maintenance/generate ──────────────────────────────────
 // Generates dues for the current (or specified) month for all enabled residents.
 
@@ -680,12 +850,13 @@ router.post("/maintenance/generate", async (req, res) => {
       return res.json({ created: 0, skipped: 0, message: "No active maintenance settings found." });
     }
 
-    // Fetch society name for Razorpay link description
+    // Fetch society info needed for the payment link
     const socRes = await dbQuery(
-      `SELECT name FROM societies WHERE id = $1`, [societyId],
+      `SELECT name, maintenance_upi_id FROM societies WHERE id = $1`, [societyId],
     );
-    const societyName = socRes?.rows?.[0]?.name || "Society";
-    const rzpEnabled  = isRazorpayConfigured();
+    const societyName  = socRes?.rows?.[0]?.name || "Society";
+    const societyUpiId = socRes?.rows?.[0]?.maintenance_upi_id || null;
+    const payEnabled   = isPaymentConfigured();
 
     // If an expense sheet exists for this month, add per-unit share to each unit's base
     const sheetRes = await dbQuery(
@@ -746,9 +917,9 @@ router.post("/maintenance/generate", async (req, res) => {
       const dueId = r.rows[0].id;
       created++;
 
-      // Create Razorpay payment link if configured
-      if (rzpEnabled) {
-        const link = await createPaymentLink({
+      // Mint a payment link (Razorpay or UPI) — persisted by the service
+      if (payEnabled) {
+        await createDuePaymentLink({
           dueId, societyId, residentId: occupant.id,
           residentName:  occupant.name  || "Resident",
           residentEmail: occupant.email || null,
@@ -756,20 +927,15 @@ router.post("/maintenance/generate", async (req, res) => {
           amount:     totalAmount,
           dueMonth:   targetMonth,
           dueDate:    dueDateStr,
-          societyName,
+          societyName, societyUpiId,
         });
-        if (link) {
-          await dbQuery(
-            `UPDATE maintenance_dues
-             SET razorpay_payment_link_id = $1, payment_link = $2
-             WHERE id = $3`,
-            [link.id, link.short_url, dueId],
-          );
-        }
       }
     }
 
-    return res.json({ created, skipped, month: targetMonth, razorpay: rzpEnabled });
+    return res.json({
+      created, skipped, month: targetMonth,
+      paymentProvider: payEnabled ? activeProvider() : null,
+    });
   } catch (err) {
     console.error("Secretary maintenance generate error:", err);
     return res.status(500).json({ error: "internal_error" });
@@ -1086,17 +1252,23 @@ router.get("/maintenance/bill-preview", async (req, res) => {
 router.patch("/maintenance/config", async (req, res) => {
   try {
     const societyId = req.user.societyId;
-    const { maintenance_enabled, maintenance_upi_id } = req.body || {};
+    const { maintenance_enabled, maintenance_upi_id, maintenance_payee_name } = req.body || {};
+
+    if (maintenance_upi_id != null && maintenance_upi_id !== "" && !isValidVpa(maintenance_upi_id)) {
+      return res.status(400).json({ error: "invalid_upi_id", message: "UPI ID must look like name@bank" });
+    }
 
     const result = await dbQuery(
       `UPDATE societies SET
-         maintenance_enabled = COALESCE($1, maintenance_enabled),
-         maintenance_upi_id  = COALESCE($2, maintenance_upi_id)
-       WHERE id = $3
-       RETURNING id, maintenance_enabled, maintenance_upi_id`,
+         maintenance_enabled    = COALESCE($1, maintenance_enabled),
+         maintenance_upi_id     = COALESCE($2, maintenance_upi_id),
+         maintenance_payee_name = COALESCE($3, maintenance_payee_name)
+       WHERE id = $4
+       RETURNING id, maintenance_enabled, maintenance_upi_id, maintenance_payee_name`,
       [
-        maintenance_enabled != null ? !!maintenance_enabled : null,
-        maintenance_upi_id  != null ? maintenance_upi_id    : null,
+        maintenance_enabled    != null ? !!maintenance_enabled  : null,
+        maintenance_upi_id     != null ? maintenance_upi_id     : null,
+        maintenance_payee_name != null ? maintenance_payee_name : null,
         societyId,
       ],
     );

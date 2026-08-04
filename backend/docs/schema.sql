@@ -259,6 +259,25 @@ ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS expense_share   NUMERIC(10
 ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS previously_due  NUMERIC(10,2) DEFAULT 0;
 ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS interest_amount NUMERIC(10,2) DEFAULT 0;
 
+-- Self-serve UPI payment flow (public /pay/:token page → resident declares UTR
+-- → secretary verifies). See services/upiService.js.
+ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS pay_token    TEXT;
+ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS payment_mode TEXT;
+ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS claimed_utr  TEXT;
+ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS claimed_at   TIMESTAMPTZ;
+ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS verified_by  INTEGER REFERENCES auth_accounts(id) ON DELETE SET NULL;
+ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS verified_at  TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_maintenance_dues_pay_token
+  ON maintenance_dues (pay_token) WHERE pay_token IS NOT NULL;
+
+DO $$ BEGIN
+  ALTER TABLE maintenance_dues DROP CONSTRAINT IF EXISTS maintenance_dues_status_check;
+  ALTER TABLE maintenance_dues ADD CONSTRAINT maintenance_dues_status_check
+    CHECK (status IN ('PENDING','PENDING_VERIFICATION','PAID','OVERDUE','WAIVED'));
+EXCEPTION WHEN others THEN NULL; END $$;
+
+ALTER TABLE societies ADD COLUMN IF NOT EXISTS maintenance_payee_name TEXT;
+
 -- Ticket: unit reference + escalation tracking
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS unit_id      INTEGER REFERENCES units(id) ON DELETE SET NULL;
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ;

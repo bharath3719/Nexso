@@ -301,6 +301,12 @@ export const api = {
       },
       /** Mark a due as paid / waived / pending */
       updateDue: (id, data) => patch(`/api/secretary/maintenance/dues/${id}`, data),
+      /** Dues where a resident reported a UPI payment awaiting confirmation */
+      pendingVerification: () => get('/api/secretary/maintenance/pending-verification'),
+      /** Confirm a resident-reported UPI payment → PAID */
+      verifyPayment: (id) => post(`/api/secretary/maintenance/dues/${id}/verify`, {}),
+      /** Reject a resident-reported UPI payment → back to PENDING */
+      rejectPayment: (id, reason) => post(`/api/secretary/maintenance/dues/${id}/reject`, { reason }),
       /** Generate dues for a given month (defaults to current month) */
       generate: (month) => post('/api/secretary/maintenance/generate', month ? { month } : {}),
       /** Send WhatsApp reminders to unpaid residents */

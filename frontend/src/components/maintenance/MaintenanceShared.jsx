@@ -19,10 +19,11 @@ export function fmtINR2(val) {
 export function computeUpdatedStats(dues) {
   return {
     total:           dues.length,
-    paid:            dues.filter((d) => d.status === "PAID").length,
-    pending:         dues.filter((d) => d.status === "PENDING").length,
-    overdue:         dues.filter((d) => d.status === "OVERDUE").length,
-    waived:          dues.filter((d) => d.status === "WAIVED").length,
+    paid:                dues.filter((d) => d.status === "PAID").length,
+    pending:             dues.filter((d) => d.status === "PENDING").length,
+    pendingVerification: dues.filter((d) => d.status === "PENDING_VERIFICATION").length,
+    overdue:             dues.filter((d) => d.status === "OVERDUE").length,
+    waived:              dues.filter((d) => d.status === "WAIVED").length,
     totalAmount:     dues.reduce((s, d) => s + Number(d.amount || 0), 0),
     collectedAmount: dues.filter((d) => d.status === "PAID").reduce((s, d) => s + Number(d.amount || 0), 0),
   };
@@ -68,7 +69,10 @@ export function useItemList(initialItems) {
 // ── Primitive components ──────────────────────────────────────────────────────
 
 function StatusBadge({ status }) {
-  const labels = { PENDING: "Pending", PAID: "Paid", OVERDUE: "Overdue", WAIVED: "Waived" };
+  const labels = {
+    PENDING: "Pending", PAID: "Paid", OVERDUE: "Overdue", WAIVED: "Waived",
+    PENDING_VERIFICATION: "To verify",
+  };
   return (
     <span className={`maint-badge maint-badge--${status}`}>
       {labels[status] || status}
@@ -111,7 +115,7 @@ function PayLinkBtn({ url }) {
 
   return (
     <div className="maint-pay-link-row">
-      <a href={url} target="_blank" rel="noopener noreferrer" className="maint-btn-link" title="Open Razorpay payment link in new tab">
+      <a href={url} target="_blank" rel="noopener noreferrer" className="maint-btn-link" title="Open the resident's payment link in a new tab">
         Pay Link
       </a>
       <button className={`maint-copy-btn${copied ? " copied" : ""}`} onClick={copy} title={copied ? "Copied!" : "Copy payment link"}>
@@ -121,7 +125,7 @@ function PayLinkBtn({ url }) {
   );
 }
 
-function DueRow({ due, onUpdate, onDownloadPdf }) {
+function DueRow({ due, onUpdate, onDownloadPdf, onVerify, onReject }) {
   const [paymentRef,    setPaymentRef]    = useState(due.payment_reference || "");
   const [saving,        setSaving]        = useState(false);
   const [downloading,   setDownloading]   = useState(false);
@@ -150,6 +154,23 @@ function DueRow({ due, onUpdate, onDownloadPdf }) {
   const undo = async () => {
     setSaving(true);
     try { await onUpdate(due.id, { status: "PENDING" }); }
+    finally { setSaving(false); }
+  };
+
+  // Resident paid by UPI and declared a UTR — the secretary matches it against
+  // the bank statement before it counts as collected.
+  const isToVerify = due.status === "PENDING_VERIFICATION";
+
+  const verify = async () => {
+    setSaving(true);
+    try { await onVerify(due.id); }
+    finally { setSaving(false); }
+  };
+  const reject = async () => {
+    const reason = window.prompt("Why can't this payment be verified?", "Not found in bank statement");
+    if (reason === null) return;
+    setSaving(true);
+    try { await onReject(due.id, reason); }
     finally { setSaving(false); }
   };
 
@@ -187,8 +208,24 @@ function DueRow({ due, onUpdate, onDownloadPdf }) {
             {due.payment_reference ? ` · ${due.payment_reference}` : ""}
           </div>
         )}
+        {isToVerify && due.claimed_utr && (
+          <div className="maint-due-row-claimed">
+            Resident reported UTR <strong>{due.claimed_utr}</strong>
+            {due.claimed_at ? ` · ${fmtDate(due.claimed_at)}` : ""}
+          </div>
+        )}
       </td>
       <td>
+        {isToVerify && (
+          <div className="maint-due-row-actions">
+            <button className="maint-btn-paid" onClick={verify} disabled={saving}>
+              {saving ? "…" : "Confirm received"}
+            </button>
+            <button className="maint-btn-waive" onClick={reject} disabled={saving}>
+              Not found
+            </button>
+          </div>
+        )}
         {isPending && due.payment_link && <PayLinkBtn url={due.payment_link} />}
         {isPending && (
           <div className="maint-due-row-actions">
@@ -235,13 +272,16 @@ export function StatsGrid({ stats }) {
       <StatCard icon="PaymentCard" iconBg="#3b82f6" value={`₹${fmtINR(stats.totalAmount)}`}      label="Total Due" />
       <StatCard icon="CheckMark"   iconBg="#10b981" value={`₹${fmtINR(stats.collectedAmount)}`}  label="Collected" />
       <StatCard icon="Clock"       iconBg="#f59e0b" value={stats.pending}                         label="Pending" />
+      {stats.pendingVerification > 0 && (
+        <StatCard icon="ReceiptCheck" iconBg="#8b5cf6" value={stats.pendingVerification}          label="To Verify" />
+      )}
       <StatCard icon="Warning"     iconBg="#ef4444" value={stats.overdue}                         label="Overdue" />
       <StatCard icon="Cancel"      iconBg="#94a3b8" value={stats.waived}                          label="Waived" />
     </div>
   );
 }
 
-export function DuesTable({ loading, dues, emptyMsg, onUpdate, onDownloadPdf }) {
+export function DuesTable({ loading, dues, emptyMsg, onUpdate, onDownloadPdf, onVerify, onReject }) {
   return (
     <div className="maint-card">
       {loading ? (
@@ -261,7 +301,8 @@ export function DuesTable({ loading, dues, emptyMsg, onUpdate, onDownloadPdf }) 
           </thead>
           <tbody>
             {dues.map((due) => (
-              <DueRow key={due.id} due={due} onUpdate={onUpdate} onDownloadPdf={onDownloadPdf} />
+              <DueRow key={due.id} due={due} onUpdate={onUpdate} onDownloadPdf={onDownloadPdf}
+                      onVerify={onVerify} onReject={onReject} />
             ))}
           </tbody>
         </table>
@@ -304,6 +345,7 @@ export function StatusFilterSelect({ value, onChange }) {
       <select className="maint-filter-select" value={value} onChange={onChange}>
         <option value="ALL">All Statuses</option>
         <option value="PENDING">Pending</option>
+        <option value="PENDING_VERIFICATION">Awaiting verification</option>
         <option value="PAID">Paid</option>
         <option value="OVERDUE">Overdue</option>
         <option value="WAIVED">Waived</option>
