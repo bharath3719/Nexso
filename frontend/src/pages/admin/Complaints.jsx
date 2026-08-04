@@ -4,7 +4,7 @@ import {
   Modal, PrimaryButton, DefaultButton, Stack, Text,
 } from "@fluentui/react";
 import { useJsonData } from "../../hooks/useJsonData.js";
-import { TicketsTable } from "../../components/tickets/TicketsTable.jsx";
+import { TicketsTable, raisedByColumn, vendorColumn } from "../../components/tickets/TicketsTable.jsx";
 import { PageHeader } from "../../components/shared/PageHeader.jsx";
 import { T } from "../../styles/typography.js";
 import { ticketStatuses } from "../../constants.js";
@@ -210,17 +210,4 @@ export function ComplaintsPage() {
 
 // Extra columns appended to TicketsTable for the complaints context.
 // Defined outside the component so the array reference is stable (no useMemo needed).
-const complaintExtraColumns = [
-  { key: "raised_by_name",  name: "Resident",       minWidth: 90, maxWidth: 140, onRender: (item) => item.raised_by_name || "—" },
-  {
-    key: "created_from",
-    name: "Society / Apt",
-    minWidth: 100, maxWidth: 160,
-    onRender: (item) => {
-      const society = item.society_name || "—";
-      const apt     = item.raised_by_apartment ? ` · ${item.raised_by_apartment}` : "";
-      return `${society}${apt}`;
-    },
-  },
-  { key: "assigned_vendor", name: "Vendor", minWidth: 90, maxWidth: 130, onRender: (item) => item.vendor_name || "—" },
-];
+const complaintExtraColumns = [raisedByColumn, vendorColumn];

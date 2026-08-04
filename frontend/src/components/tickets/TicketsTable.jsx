@@ -4,12 +4,79 @@ import { ticketStatuses } from "../../constants.js";
 import { formatDate } from "../../utils/formatDate.js";
 import { listStyles } from "../../theme.js";
 import { useTableSort, baseGetValue } from "../../hooks/useTableSort.js";
+import { StatusBadge } from "./TicketShared.jsx";
 import "../../styles/TicketsTable.css";
+
+// Rows are taller than the shared default so the two-line "Raised By" cell fits.
+const ticketListStyles = {
+  ...listStyles,
+  contentWrapper: {
+    paddingTop: 0,
+    selectors: {
+      ".ms-DetailsRow":           { minHeight: 48 },
+      ".ms-DetailsRow-cell":      { height: 48, paddingTop: 0, paddingBottom: 0, display: "flex", alignItems: "center" },
+      ".ms-DetailsRow-cellCheck": { height: 48 },
+    },
+  },
+};
+
+/** Deterministic hue from a name → vendor avatar background colour. */
+function nameToHue(name = "") {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return h;
+}
+
+function initials(name = "") {
+  return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+}
+
+// ─── Reusable extra columns ───────────────────────────────────────────────────
+// Passed via `extraColumns` by the pages that have the joined fields available
+// (the /api/tickets rows carry raised_by_name, society_name, raised_by_apartment
+// and vendor_name). Defined at module scope so the array reference stays stable.
+
+/** Resident who raised the ticket + where they live, stacked in one cell. */
+export const raisedByColumn = {
+  key: "raised_by",
+  name: "Raised By",
+  minWidth: 140,
+  maxWidth: 220,
+  onRender: (item) => {
+    const who   = item.raised_by_name || item.raised_by_number || "Unknown";
+    const where = [item.society_name, item.raised_by_apartment].filter(Boolean).join(" · ");
+    return (
+      <div className="tt-stacked-cell">
+        <span className="tt-stacked-cell__primary" title={who}>{who}</span>
+        <span className="tt-stacked-cell__meta" title={where}>{where || "—"}</span>
+      </div>
+    );
+  },
+};
+
+/** Assigned vendor, with an initials avatar — or a muted "Unassigned" pill. */
+export const vendorColumn = {
+  key: "vendor_name",
+  name: "Assigned Vendor",
+  minWidth: 120,
+  maxWidth: 190,
+  onRender: (item) => {
+    if (!item.vendor_name) return <span className="tt-vendor-none">Unassigned</span>;
+    return (
+      <span className="tt-vendor" title={item.vendor_name}>
+        <span className="tt-vendor__avatar" style={{ background: `hsl(${nameToHue(item.vendor_name)}, 50%, 40%)` }}>
+          {initials(item.vendor_name)}
+        </span>
+        <span className="tt-vendor__name">{item.vendor_name}</span>
+      </span>
+    );
+  },
+};
 
 function filterTickets(items, statusFilter, text) {
   return items
     .filter((t) => statusFilter === "ALL" || t.status === statusFilter)
-    .filter((t) => !text || [t.id, t.status, t.category, t.description, t.created_at].filter(Boolean).join(" ").toLowerCase().includes(text));
+    .filter((t) => !text || [t.id, t.status, t.category, t.description, t.created_at, t.raised_by_name, t.society_name, t.raised_by_apartment, t.vendor_name].filter(Boolean).join(" ").toLowerCase().includes(text));
 }
 
 export function TicketsTable({ items, loading, emptyLabel, showFilters = true, pageSize = null, onAction = null, actionLabel = "Manage", actionFirst = false, extraColumns = [] }) {
@@ -31,7 +98,10 @@ export function TicketsTable({ items, loading, emptyLabel, showFilters = true, p
     return [
       makeCol("id",          "ID",          { fieldName: "id",          minWidth: 46,  maxWidth: 70  }),
       ...(actionFirst && actionCol ? [actionCol] : []),
-      makeCol("status",      "Status",      { fieldName: "status",      minWidth: 62,  maxWidth: 100 }),
+      makeCol("status",      "Status",      {
+        fieldName: "status", minWidth: 96, maxWidth: 120,
+        onRender: (item) => <StatusBadge status={item.status || "OPEN"} />,
+      }),
       makeCol("category",    "Category",    { fieldName: "category",    minWidth: 70,  maxWidth: 110 }),
       makeCol("description", "Description", {
         fieldName: "description", minWidth: 120, maxWidth: 280, isMultiline: false,
@@ -81,7 +151,7 @@ export function TicketsTable({ items, loading, emptyLabel, showFilters = true, p
           layoutMode={DetailsListLayoutMode.justified}
           constrainMode={ConstrainMode.horizontalConstrained}
           selectionMode={SelectionMode.none}
-          styles={listStyles}
+          styles={ticketListStyles}
           onColumnResize={handleColumnResize}
         />
       </div>
