@@ -33,7 +33,7 @@ export function useTableSort(defaultKey = "created") {
       const av = getValue(a);
       const bv = getValue(b);
       if (av === bv) return 0;
-      return av > bv ? -dir : dir;
+      return av > bv ? dir : -dir;
     });
   }, [sortState]);
 
