@@ -6,16 +6,16 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "db:schema": "psql \"$DATABASE_URL\" -f docs/schema.sql",
-    "db:seed": "psql \"$DATABASE_URL\" -f docs/seed.sql",
+
+    "db:schema": "node scripts/apply-schema.js",
     "db:seed-admin": "node scripts/seed-admin.js",
-    "db:seed-vendor": "node scripts/seed-vendor.js",
-    "db:reset-admin-pw": "node scripts/reset-admin-password.js",
-    "simulate:msg": "node scripts/simulate_message.js",
-    "db:add-user": "node scripts/add_user.js",
-    "db:add-test-user": "node scripts/add_test_user.js",
-    "db:add-tickets": "node scripts/add_tickets.js",
-    "db:reset": "node scripts/reset-db.js"
+
+    "db:backup": "node scripts/db-backup.js",
+    "db:restore": "node scripts/db-restore.js",
+    "db:cleanup": "node scripts/db-cleanup.js",
+
+    "db:reset": "node scripts/reset-db.js",
+    "simulate:msg": "node scripts/simulate_message.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

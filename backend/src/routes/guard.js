@@ -12,10 +12,10 @@ import express from "express";
 import bcrypt  from "bcryptjs";
 import jwt     from "jsonwebtoken";
 import { dbQuery } from "../db/index.js";
+import { jwtSecret as JWT_SECRET } from "../utils/secrets.js";
 
 const router = express.Router();
 
-const JWT_SECRET  = () => process.env.JWT_SECRET || "nexso-dev-secret";
 const JWT_EXPIRES = "12h";
 
 // ── Guard JWT middleware ───────────────────────────────────────────────────────

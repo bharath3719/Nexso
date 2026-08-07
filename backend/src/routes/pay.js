@@ -288,14 +288,18 @@ router.post("/:token/claim", async (req, res) => {
     );
     if (dupe?.rows?.length) return res.redirect(303, `/pay/${token}?error=utr`);
 
-    await dbQuery(
+    // Re-assert the status in the UPDATE itself: the read above and this write
+    // are separate round trips, so a double-submit would otherwise claim twice.
+    const claimed = await dbQuery(
       `UPDATE maintenance_dues
           SET status = 'PENDING_VERIFICATION',
               claimed_utr = $1, claimed_at = NOW(),
               payment_mode = 'UPI', updated_at = NOW()
-        WHERE id = $2`,
+        WHERE id = $2 AND status IN ('PENDING', 'OVERDUE')
+        RETURNING id`,
       [utr, due.id],
     );
+    if (!claimed?.rows?.length) return res.redirect(303, `/pay/${token}`);
 
     log(`[Pay] Due #${due.id} claimed by resident — UTR ${utr}, awaiting verification`);
 

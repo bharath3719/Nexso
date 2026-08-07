@@ -53,26 +53,38 @@ router.get("/profile", async (req, res) => {
 router.patch("/profile", async (req, res) => {
   try {
     const { residentId } = req.user;
-    const { email, preferred_contact, bhk, family_members, vehicles, emergency_contact } = req.body || {};
+    const body = req.body || {};
+    const { email, preferred_contact, bhk, family_members, vehicles, emergency_contact } = body;
+
+    if (vehicles !== undefined && !Array.isArray(vehicles)) {
+      return res.status(400).json({ error: "invalid_vehicles", message: "vehicles must be an array." });
+    }
+    if (family_members !== undefined && !Number.isFinite(Number(family_members))) {
+      return res.status(400).json({ error: "invalid_family_members" });
+    }
+
+    // A PATCH must leave untouched fields untouched. Sending only { email }
+    // used to blank out vehicles, emergency_contact, bhk and family_members.
+    const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
 
     const result = await dbQuery(
       `UPDATE residents
-       SET email             = $1,
-           preferred_contact = $2,
-           bhk               = $3,
-           family_members    = $4,
-           vehicles          = $5::jsonb,
-           emergency_contact = $6::jsonb
-       WHERE id = $7
+       SET email             = CASE WHEN $1::bool THEN $2::text  ELSE email             END,
+           preferred_contact = CASE WHEN $3::bool THEN $4::text  ELSE preferred_contact END,
+           bhk               = CASE WHEN $5::bool THEN $6::text  ELSE bhk               END,
+           family_members    = CASE WHEN $7::bool THEN $8::int   ELSE family_members    END,
+           vehicles          = CASE WHEN $9::bool THEN $10::jsonb ELSE vehicles          END,
+           emergency_contact = CASE WHEN $11::bool THEN $12::jsonb ELSE emergency_contact END
+       WHERE id = $13
        RETURNING id, name, phone, email, preferred_contact, bhk, resident_type,
                  family_members, vehicles, emergency_contact`,
       [
-        email     ?? null,
-        preferred_contact ?? null,
-        bhk       ?? null,
-        family_members !== undefined ? Number(family_members) : null,
-        JSON.stringify(vehicles ?? []),
-        emergency_contact ? JSON.stringify(emergency_contact) : null,
+        has("email"),             email ?? null,
+        has("preferred_contact"), preferred_contact ?? null,
+        has("bhk"),               bhk ?? null,
+        has("family_members"),    family_members !== undefined ? Number(family_members) : null,
+        has("vehicles"),          JSON.stringify(vehicles ?? []),
+        has("emergency_contact"), emergency_contact ? JSON.stringify(emergency_contact) : null,
         residentId,
       ],
     );
@@ -538,7 +550,9 @@ router.post("/complaints", async (req, res) => {
     if (!description?.trim()) return res.status(400).json({ error: "description_required" });
 
     const ticketPriority = priority === "URGENT" ? "URGENT" : "NORMAL";
-    const ticketId = `T-${Date.now()}`;
+    // ticket_id is globally UNIQUE — two complaints filed in the same
+    // millisecond would collide on the timestamp alone.
+    const ticketId = `T-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
 
     const result = await dbQuery(
       `INSERT INTO tickets

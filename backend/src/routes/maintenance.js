@@ -21,6 +21,7 @@ import { sendWhatsAppText, sendWhatsAppDocument } from "../services/notification
 import { saveBillAndGetUrl } from "../services/billPdf.js";
 import { sendMaintenanceReminderEmail, isEmailConfigured } from "../services/email.js";
 import { createDuePaymentLink, activeProvider, isPaymentConfigured } from "../services/paymentLinks.js";
+import { toMonth, isValidMonth, dueDateFor } from "../utils/params.js";
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -46,7 +47,7 @@ function buildStats(dues) {
 router.get("/dues", async (req, res) => {
   try {
     const { societyId, month, status } = req.query;
-    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    const targetMonth = toMonth(month);
 
     let sql = `
       SELECT
@@ -126,9 +127,11 @@ router.post("/generate", async (req, res) => {
   try {
     const { societyId, month } = req.body || {};
     if (!societyId) return res.status(400).json({ error: "societyId_required" });
+    if (month && !isValidMonth(month)) {
+      return res.status(400).json({ error: "invalid_month", message: "month must be YYYY-MM." });
+    }
 
-    const targetMonth  = month || new Date().toISOString().slice(0, 7);
-    const [year, mon]  = targetMonth.split("-").map(Number);
+    const targetMonth = toMonth(month);
 
     const settings = await dbQuery(
       `SELECT ms.unit_id, ms.amount, ms.due_day
@@ -167,8 +170,7 @@ router.post("/generate", async (req, res) => {
       const occupant = occupantRes?.rows?.[0];
       if (!occupant) { skipped++; continue; }
 
-      const dueDate    = new Date(Date.UTC(year, mon - 1, s.due_day));
-      const dueDateStr = dueDate.toISOString().slice(0, 10);
+      const dueDateStr = dueDateFor(targetMonth, s.due_day);
 
       const r = await dbQuery(
         `INSERT INTO maintenance_dues
@@ -216,7 +218,7 @@ router.post("/generate", async (req, res) => {
 router.post("/send-reminders", async (req, res) => {
   try {
     const { societyId, month } = req.body || {};
-    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    const targetMonth = toMonth(month);
 
     let sql = `
       SELECT md.id, md.amount, md.due_date, md.payment_link,

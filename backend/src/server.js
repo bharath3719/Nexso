@@ -4,6 +4,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import morgan from "morgan";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -79,6 +80,15 @@ const webhookLimiter = rateLimit({
   message: { error: "too_many_requests" },
 });
 
+// Public, unauthenticated pass lookup — cap scanning of the pass-code space.
+const publicLookupLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders:  false,
+  message: { error: "too_many_requests" },
+});
+
 app.use(
   cors(
     corsOrigins.size
@@ -105,8 +115,15 @@ app.use(
 );
 app.use(morgan("dev"));
 
-// Serve generated maintenance bill PDFs
-app.use("/bills", express.static(path.join(__dirname, "..", "bills")));
+// Serve generated maintenance bill PDFs. These URLs go to residents over
+// WhatsApp, so they can't sit behind a login — the filename is an unguessable
+// HMAC instead (see billPdf.js). Restrict to .pdf and never list the directory.
+app.use("/bills", express.static(path.join(__dirname, "..", "bills"), {
+  index: false,
+  dotfiles: "deny",
+  extensions: false,
+  setHeaders: (res) => res.setHeader("X-Robots-Tag", "noindex, nofollow"),
+}), (_req, res) => res.status(404).json({ error: "not_found" }));
 
 app.get("/health", (req, res) => {
   res.json({
@@ -138,8 +155,10 @@ app.use("/api/societies",    societiesRouter);
 app.use("/api/onboarding",   onboardingRouter);
 app.use("/api/maintenance",  maintenanceRouter);
 app.use("/api/resident",     residentRouter);
+// Only the login is throttled — guards verify many passes per shift.
+app.use("/api/guard/login",  authLimiter);
 app.use("/api/guard",        guardRouter);
-app.use("/api/passes",       passesRouter);
+app.use("/api/passes",       publicLookupLimiter, passesRouter);
 
 // Public resident-facing pay page. Server-rendered, so it must be mounted
 // before the SPA static handler and its "*" fallback below.
@@ -157,9 +176,39 @@ if (process.env.NODE_ENV !== "test") {
 // Serve the Vite production build and fall back to index.html for all
 // client-side routes so hard-refreshes don't return 404.
 const frontendDist = path.join(__dirname, "..", "..", "frontend", "dist");
-app.use(express.static(frontendDist));
-app.get("*", (_req, res) => {
-  res.sendFile(path.join(frontendDist, "index.html"));
+
+// An unmatched API path must not fall through to index.html — the client
+// parses these responses as JSON and an HTML body surfaces as a parse error
+// rather than the 404 it actually is.
+app.use(["/api", "/webhook"], (_req, res) => {
+  res.status(404).json({ error: "not_found" });
+});
+
+// When the frontend is deployed as its own static service (see render.yaml),
+// this build directory doesn't exist. Serve it only when it's actually there,
+// so the catch-all can't turn every unmatched path into a 500.
+const indexHtml = path.join(frontendDist, "index.html");
+const hasFrontend = fs.existsSync(indexHtml);
+
+if (hasFrontend) {
+  app.use(express.static(frontendDist));
+  app.get("*", (_req, res) => res.sendFile(indexHtml));
+} else {
+  app.get("*", (_req, res) => res.status(404).json({ error: "not_found" }));
+}
+
+// Final error handler. Without one, Express replies with an HTML error page —
+// and in development that page includes a stack trace.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  if (err?.type === "entity.parse.failed") {
+    return res.status(400).json({ error: "invalid_json" });
+  }
+  if (err?.message === "CORS origin not allowed") {
+    return res.status(403).json({ error: "cors_forbidden" });
+  }
+  console.error("Unhandled error:", err);
+  return res.status(500).json({ error: "internal_error" });
 });
 
 export default app;

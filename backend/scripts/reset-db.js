@@ -8,6 +8,7 @@
  */
 
 import bcrypt   from "bcryptjs";
+import crypto   from "crypto";
 import dotenv   from "dotenv";
 import { getDb, ensureSchema } from "../src/db/index.js";
 
@@ -15,6 +16,17 @@ dotenv.config();
 
 if (!process.env.DATABASE_URL) {
   console.error("❌  DATABASE_URL is not set.");
+  process.exit(1);
+}
+
+// This script exists for rebuilding a dev database. Against production it is
+// unrecoverable data loss — use scripts/db-cleanup.js to remove test societies
+// without touching the rest.
+if (process.env.NODE_ENV === "production" && process.env.I_UNDERSTAND_THIS_DESTROYS_PRODUCTION !== "yes") {
+  console.error("❌  Refusing to run against NODE_ENV=production.");
+  console.error("    To remove test data from a live database use:");
+  console.error("      node scripts/db-cleanup.js --list");
+  console.error("      node scripts/db-cleanup.js --society <code> --apply\n");
   process.exit(1);
 }
 
@@ -32,22 +44,21 @@ if (process.env.CONFIRM_RESET !== "yes") {
 const db = getDb();
 
 try {
+  // Drop every table in the public schema rather than a hand-maintained list.
+  // The old explicit list had drifted seven tables behind the schema
+  // (outbound_broadcasts, society_events, event_rsvps, polls, poll_votes,
+  // society_expenses, society_other_income). Those survived the "wipe" with
+  // their rows intact while CASCADE silently removed their foreign keys — so
+  // stale rows then re-attached themselves to whichever society reused the id.
   process.stdout.write("🗑  Dropping all tables… ");
-  await db.query(`
-    DROP TABLE IF EXISTS
-      otp_tokens,
-      maintenance_invoices, monthly_closures, maintenance_expense_sheets,
-      maintenance_dues, maintenance_settings,
-      visitor_passes, announcements,
-      ticket_activity_logs, ticket_messages, tickets,
-      vendor_documents, vendor_service_areas, vendor_suspensions,
-      whatsapp_outbound_messages, whatsapp_sessions, whatsapp_messages,
-      guard_accounts, auth_accounts,
-      residents, units, floors, towers,
-      vendors, users, societies
-    CASCADE
-  `);
-  console.log("✓");
+  const { rows: tables } = await db.query(
+    `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
+  );
+  if (tables.length) {
+    const list = tables.map((t) => `"${t.tablename}"`).join(", ");
+    await db.query(`DROP TABLE IF EXISTS ${list} CASCADE`);
+  }
+  console.log(`✓ (${tables.length})`);
 
   process.stdout.write("📐  Recreating schema… ");
   const ok = await ensureSchema();
@@ -56,17 +67,25 @@ try {
 
   process.stdout.write("👤  Seeding admin… ");
   const username = process.env.ADMIN_USERNAME || "admin";
-  const password = process.env.ADMIN_PASSWORD || "admin123";
+  // Generate a random password when ADMIN_PASSWORD isn't supplied. The old
+  // "admin123" default meant every reset DB shipped the same known credential,
+  // and force_password_reset was FALSE so nothing ever prompted a change.
+  const generated = !process.env.ADMIN_PASSWORD;
+  const password  = process.env.ADMIN_PASSWORD || `Nx-${crypto.randomBytes(9).toString("base64url")}`;
   const hash = await bcrypt.hash(password, 12);
   await db.query(
     `INSERT INTO auth_accounts (username, password_hash, portal_role, force_password_reset)
-     VALUES ($1, $2, 'NEXSO_ADMIN', FALSE)
-     ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
-    [username, hash],
+     VALUES ($1, $2, 'NEXSO_ADMIN', $3)
+     ON CONFLICT (username) DO UPDATE
+       SET password_hash        = EXCLUDED.password_hash,
+           force_password_reset = EXCLUDED.force_password_reset`,
+    [username, hash, generated],
   );
   console.log("✓");
 
-  console.log(`\n✅  Done. Login: ${username} / ${password}\n`);
+  console.log(`\n✅  Done. Login: ${username} / ${password}`);
+  if (generated) console.log("    (randomly generated — save it now, it is not stored anywhere)\n");
+  else console.log("");
 } catch (err) {
   console.error("\n❌  Failed:", err.message);
   process.exit(1);

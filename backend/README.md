@@ -42,15 +42,33 @@ Copy [backend/.env.example](backend/.env.example) to `.env` and set values for y
 
 - Ticket State Machine: see [docs/state_machine.mmd](docs/state_machine.mmd)
 - Webhook → Ticket Sequence: see [docs/sequence_webhook_ticket.mmd](docs/sequence_webhook_ticket.mmd)
-- Database Schema (minimal SQL): see [docs/schema.sql](docs/schema.sql)
+- Database Schema: defined in code by `ensureSchema()` in [src/db/index.js](src/db/index.js); apply with `npm run db:schema`
 
 ## Deployment
 
 1. Provision Postgres and set `DATABASE_URL`.
-2. Set `CORS_ORIGIN` to your deployed frontend origin.
-3. Start the API with `npm start`.
-4. Confirm [backend/src/server.js](backend/src/server.js) health endpoint at `/health` returns `status: ok`.
-5. Run `npm run db:seed` only for demo data, not for production tenant data.
+2. Set `NODE_ENV=production`, `JWT_SECRET` and `WHATSAPP_APP_SECRET` — the server
+   refuses to start in production without them.
+3. Set `CORS_ORIGIN` to your deployed frontend origin.
+4. Apply the schema with `npm run db:schema`.
+5. Create the first admin with `npm run db:seed-admin` (prints a generated password once).
+6. Start the API with `npm start`.
+7. Confirm the `/health` endpoint in [src/server.js](src/server.js) returns `status: ok`.
+
+See [RUNBOOK-GOLIVE.md](../RUNBOOK-GOLIVE.md) for backup, cleanup and recovery.
+
+## Scripts
+
+| Command | Purpose |
+|---|---|
+| `npm start` / `npm run dev` | Run the API |
+| `npm run db:schema` | Apply the schema (`ensureSchema()`) |
+| `npm run db:seed-admin` | Create or reset the NEXSO_ADMIN account |
+| `npm run db:backup` | Verified snapshot + row-count manifest |
+| `npm run db:restore` | Restore a dump (`--into` to rehearse safely) |
+| `npm run db:cleanup` | Delete test societies (dry run by default) |
+| `npm run db:reset` | **Dev only** — drop everything and rebuild |
+| `npm run simulate:msg` | Post a fake WhatsApp webhook locally |
 
 ## Runtime Notes
 

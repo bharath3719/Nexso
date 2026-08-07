@@ -20,12 +20,7 @@ import { saveBillAndGetUrl } from "./billPdf.js";
 import { sendMaintenanceReminderEmail, isEmailConfigured } from "./email.js";
 import { createDuePaymentLink } from "./paymentLinks.js";
 import { log } from "../utils/logger.js";
-
-// ── Helper: current YYYY-MM ────────────────────────────────────────────────────
-
-function currentMonth() {
-  return new Date().toISOString().slice(0, 7);
-}
+import { currentMonth, dueDateFor } from "../utils/params.js";
 
 // ── Generate dues for all enabled societies ────────────────────────────────────
 //
@@ -34,8 +29,6 @@ function currentMonth() {
 
 async function generateDuesForAllSocieties(month) {
   log(`[Maintenance] Auto-generating dues for ${month}…`);
-
-  const [year, mon] = month.split("-").map(Number);
 
   try {
     // Fetch all societies with maintenance turned on
@@ -67,8 +60,7 @@ async function generateDuesForAllSocieties(month) {
         const occupant = occupantRes?.rows?.[0];
         if (!occupant) { totalSkipped++; continue; }
 
-        const dueDate    = new Date(Date.UTC(year, mon - 1, s.due_day));
-        const dueDateStr = dueDate.toISOString().slice(0, 10);
+        const dueDateStr = dueDateFor(month, s.due_day);
 
         const r = await dbQuery(
           `INSERT INTO maintenance_dues
