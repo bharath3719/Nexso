@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { Stack, Text, Icon, Spinner, SpinnerSize, MessageBar, MessageBarType, DefaultButton, Dialog, DialogType, DialogFooter, PrimaryButton } from "@fluentui/react";
 import { useParams, useNavigate } from "react-router-dom";
 import { CSS_T } from "../../styles/typography.js";
@@ -7,6 +7,8 @@ import { validatePhone, validateEmail } from "../../utils/validation.js";
 import { BRAND as C, TOWER_GRADIENTS } from "../../styles/cssConstants.js";
 import { CONTACT_OPTION_KEYS, BHK_OPTIONS } from "../../constants.js";
 import { CredentialsBox } from "../../components/onboarding/CredentialsBox.jsx";
+import { StructurePreviewModal } from "../../components/onboarding/StructurePreviewModal.jsx";
+import { Society3DView } from "../../components/society/Society3DView.jsx";
 import "../../styles/SocietyDetail.css";
 
 const SOCIETY_TYPE_META = {
@@ -278,7 +280,7 @@ function ResidentCard({ resident, onEdit, onDelete }) {
         {resident.phone && (
           <div className="sd-resident-contact-row">
             <Icon iconName="Phone" styles={{ root: { fontSize: 11 } }} />
-            {resident.phone}
+            <span className="sd-resident-phone">{resident.phone}</span>
           </div>
         )}
         {resident.email && (
@@ -327,7 +329,7 @@ function ResidentCard({ resident, onEdit, onDelete }) {
 }
 
 // ─── Unit block ────────────────────────────────────────────────────────────────
-function UnitBlock({ unit, residentMap, societyId, onResidentAdded, onResidentUpdated, onResidentDeleted }) {
+function UnitBlock({ unit, residentMap, societyId, onResidentAdded, onResidentUpdated, onResidentDeleted, pendingAdd }) {
   const [showForm,   setShowForm]   = useState(false);
   const [editingId,  setEditingId]  = useState(null);
   const [deleteId,   setDeleteId]   = useState(null);
@@ -339,6 +341,18 @@ function UnitBlock({ unit, residentMap, societyId, onResidentAdded, onResidentUp
     setShowForm(open);
     if (open) setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
   };
+
+  // Unit picked in the structure preview → open this unit's add form and scroll
+  // to it. The delay outruns the floor accordion's 320ms expand so the target
+  // has its final position before we scroll.
+  useEffect(() => {
+    if (!pendingAdd || pendingAdd.unitId !== unit.id) return;
+    setShowForm(true);
+    setEditingId(null);
+    setDeleteId(null);
+    const t = setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 400);
+    return () => clearTimeout(t);
+  }, [pendingAdd, unit.id]);
 
   const handleAdded = (newResident) => {
     onResidentAdded(unit.id, newResident);
@@ -471,7 +485,7 @@ function UnitBlock({ unit, residentMap, societyId, onResidentAdded, onResidentUp
 }
 
 // ─── Floor accordion ───────────────────────────────────────────────────────────
-function FloorRow({ floor, residentMap, societyId, onResidentAdded, onResidentUpdated, onResidentDeleted, defaultOpen = false }) {
+function FloorRow({ floor, residentMap, societyId, onResidentAdded, onResidentUpdated, onResidentDeleted, defaultOpen = false, pendingAdd }) {
   const [open, setOpen]   = useState(defaultOpen);
   const contentRef        = useRef(null);
 
@@ -493,6 +507,13 @@ function FloorRow({ floor, residentMap, societyId, onResidentAdded, onResidentUp
       setOpen(false);
     }
   };
+
+  // Expand when the structure preview targets a unit on this floor
+  useEffect(() => {
+    if (!pendingAdd || open) return;
+    if ((floor.units || []).some((u) => u.id === pendingAdd.unitId)) toggle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAdd]);
 
   return (
     <div className={`sd-floor-row${open ? " sd-floor-row--open" : ""}`}>
@@ -545,6 +566,7 @@ function FloorRow({ floor, residentMap, societyId, onResidentAdded, onResidentUp
                 onResidentAdded={onResidentAdded}
                 onResidentUpdated={onResidentUpdated}
                 onResidentDeleted={onResidentDeleted}
+                pendingAdd={pendingAdd}
               />
             ))
           )}
@@ -594,6 +616,63 @@ function TowerCard({ tower, index, selected, onClick, residentMap }) {
   );
 }
 
+// ─── Unit focus modal ──────────────────────────────────────────────────────────
+// Opened by clicking a window in the 3D view. The body is the very same
+// UnitBlock the list view renders, so add / edit / delete behave identically in
+// both views and there is only one copy of that logic.
+function UnitFocusModal({ target, residentMap, societyId, onClose, onResidentAdded, onResidentUpdated, onResidentDeleted }) {
+  const { tower, floor, unit } = target;
+  const residents = residentMap[unit.id] || [];
+
+  // Arriving from a vacant unit, the click already said "assign a resident" —
+  // reuse UnitBlock's pendingAdd hook so the form is open on arrival instead of
+  // showing the empty state and asking for the same click a second time.
+  // Memoised on primitives: a fresh object every render would re-fire the effect
+  // and spring the form back open after the user cancelled it.
+  const pendingAdd = useMemo(
+    () => (target.addNow ? { unitId: unit.id } : null),
+    [target.addNow, unit.id],
+  );
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="sd-unit-overlay" onClick={onClose}>
+      <div className="sd-unit-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="sd-unit-modal-header">
+          <div className="sd-unit-modal-badge">{unit.unit_number}</div>
+          <div className="sd-unit-modal-titles">
+            <div className="sd-unit-modal-title">Unit {unit.unit_number}</div>
+            <div className="sd-unit-modal-sub">
+              {tower.name} · Floor {floor.floor_number} ·{" "}
+              {residents.length === 0
+                ? "Vacant"
+                : `${residents.length} resident${residents.length !== 1 ? "s" : ""}`}
+            </div>
+          </div>
+          <button className="ob-close-btn" onClick={onClose} title="Close">×</button>
+        </div>
+
+        <div className="sd-unit-modal-body">
+          <UnitBlock
+            unit={unit}
+            residentMap={residentMap}
+            societyId={societyId}
+            onResidentAdded={onResidentAdded}
+            onResidentUpdated={onResidentUpdated}
+            onResidentDeleted={onResidentDeleted}
+            pendingAdd={pendingAdd}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Stat tile ─────────────────────────────────────────────────────────────────
 // Icon colour and tint background are dynamic → kept inline
 function StatTile({ icon, value, label, color }) {
@@ -621,6 +700,16 @@ export function SocietyDetailPage() {
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState(null);
   const [selectedTower, setSelectedTower] = useState(null);
+
+  // "3d" — orbitable model of the society; "list" — tower cards + floor accordion
+  const [viewMode,  setViewMode]  = useState("3d");
+  const [focusUnit, setFocusUnit] = useState(null);   // { tower, floor, unit, addNow }
+
+  // Structure preview
+  const [previewOpen, setPreviewOpen] = useState(false);
+  // { unitId, key } — key makes each click a fresh object so re-picking the same
+  // unit still re-triggers the effects downstream
+  const [pendingAdd,  setPendingAdd]  = useState(null);
 
   // Secretary password reset
   const [resetCredsLoading, setResetCredsLoading] = useState(false);
@@ -683,6 +772,53 @@ export function SocietyDetailPage() {
       [unitId]: (prev[unitId] || []).filter((r) => r.id !== residentId),
     }));
   }, []);
+
+  // StructurePreviewModal speaks the onboarding wizard's shape — towers hold
+  // plain unit-number strings and residents carry (tower_idx, unit_number).
+  // Flatten this page's nested unit objects / id-keyed resident map into that,
+  // keeping a "towerIdx:unitNumber" → unit id index for the click-through.
+  const preview = useMemo(() => {
+    const unitIdByKey = {};
+    const flatResidents = [];
+    const flatTowers = towers.map((tower, ti) => ({
+      name: tower.name,
+      floors: (tower.floors || []).map((floor) => ({
+        floor_number: floor.floor_number,
+        units: (floor.units || []).map((u) => {
+          unitIdByKey[`${ti}:${u.unit_number}`] = u.id;
+          for (const r of residentMap[u.id] || []) {
+            flatResidents.push({
+              tower_idx:   ti,
+              unit_number: u.unit_number,
+              name:        r.name,
+              phone:       r.phone,
+            });
+          }
+          return u.unit_number;
+        }),
+      })),
+    }));
+    return { towers: flatTowers, residents: flatResidents, unitIdByKey };
+  }, [towers, residentMap]);
+
+  // Empty unit clicked in the preview → hand off to whichever view is showing:
+  // the 3D model opens the unit modal, the list jumps to that unit in the tree
+  // with its add-resident form already open.
+  const handlePreviewUnitClick = (towerIdx, floorIdx, unitNumber) => {
+    const unitId = preview.unitIdByKey[`${towerIdx}:${unitNumber}`];
+    setPreviewOpen(false);
+    if (!unitId) return;
+
+    if (viewMode === "3d") {
+      const tower = towers[towerIdx];
+      const floor = (tower?.floors || [])[floorIdx];
+      const unit  = (floor?.units || []).find((u) => u.id === unitId);
+      if (tower && floor && unit) setFocusUnit({ tower, floor, unit });
+      return;
+    }
+    setSelectedTower(towerIdx);
+    setPendingAdd({ unitId, key: Date.now() });
+  };
 
   if (loading) {
     return (
@@ -813,10 +949,53 @@ export function SocietyDetailPage() {
           <div className="sd-towers-header">
             <Icon iconName="CityNext" styles={{ root: { color: C.blue, fontSize: 16 } }} />
             <span style={CSS_T.sectionHeader}>Towers</span>
-            <span style={{ ...CSS_T.caption, marginLeft: 4 }}>— select a tower to explore floors &amp; residents</span>
+            <span style={{ ...CSS_T.caption, marginLeft: 4 }}>
+              {viewMode === "3d"
+                ? "— click a window to manage that home"
+                : "— select a tower to explore floors & residents"}
+            </span>
+
+            <div className="sd-view-toggle">
+              <button
+                className={`sd-view-tab${viewMode === "3d" ? " sd-view-tab--on" : ""}`}
+                onClick={() => setViewMode("3d")}
+              >
+                <Icon iconName="CubeShape" styles={{ root: { fontSize: 12 } }} />
+                3D
+              </button>
+              <button
+                className={`sd-view-tab${viewMode === "list" ? " sd-view-tab--on" : ""}`}
+                onClick={() => setViewMode("list")}
+              >
+                <Icon iconName="BulletedList" styles={{ root: { fontSize: 12 } }} />
+                List
+              </button>
+            </div>
+
+            <button
+              className="sd-preview-btn"
+              onClick={() => setPreviewOpen(true)}
+              title="See every unit at a glance and spot the ones without residents"
+            >
+              <Icon iconName="View" styles={{ root: { fontSize: 12 } }} />
+              Preview Structure
+            </button>
           </div>
 
+          {/* 3D model — every unit is a window; lit means occupied */}
+          {viewMode === "3d" && (
+            <Society3DView
+              towers={towers}
+              societyName={society.name}
+              residentMap={residentMap}
+              selectedUnitId={focusUnit?.unit.id ?? null}
+              onUnitClick={(tower, floor, unit, intent) =>
+                setFocusUnit({ tower, floor, unit, addNow: intent === "add" })}
+            />
+          )}
+
           {/* Tower cards */}
+          {viewMode === "list" && (
           <div className={`sd-towers-cards${activeTower ? " sd-towers-cards--bordered" : ""}`}>
             {towers.map((tower, idx) => (
               <TowerCard
@@ -829,9 +1008,10 @@ export function SocietyDetailPage() {
               />
             ))}
           </div>
+          )}
 
           {/* Floor accordion */}
-          {activeTower && (
+          {viewMode === "list" && activeTower && (
             <div className="sd-floors-panel">
               <div className="sd-floors-panel-header">
                 <div
@@ -862,12 +1042,36 @@ export function SocietyDetailPage() {
                     onResidentUpdated={handleResidentUpdated}
                     onResidentDeleted={handleResidentDeleted}
                     defaultOpen={fi === 0}
+                    pendingAdd={pendingAdd}
                   />
                 ))
               )}
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Unit Focus Modal (opened from the 3D model) ─────────────────── */}
+      {focusUnit && (
+        <UnitFocusModal
+          target={focusUnit}
+          residentMap={residentMap}
+          societyId={id}
+          onClose={() => setFocusUnit(null)}
+          onResidentAdded={handleResidentAdded}
+          onResidentUpdated={handleResidentUpdated}
+          onResidentDeleted={handleResidentDeleted}
+        />
+      )}
+
+      {/* ── Structure Preview Modal ────────────────────────────────────── */}
+      {previewOpen && (
+        <StructurePreviewModal
+          towers={preview.towers}
+          residents={preview.residents}
+          onClose={() => setPreviewOpen(false)}
+          onUnitClick={handlePreviewUnitClick}
+        />
       )}
 
       {/* ── Reset Secretary Password Modal ─────────────────────────────── */}
