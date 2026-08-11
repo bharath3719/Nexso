@@ -17,10 +17,10 @@ import crypto    from "crypto";
 import { dbQuery }          from "../db/index.js";
 import { requireAuth }      from "../middleware/auth.js";
 import { sendWhatsAppText } from "../services/notifications.js";
+import { jwtSecret as JWT_SECRET } from "../utils/secrets.js";
 
 const router = express.Router();
 
-const JWT_SECRET  = () => process.env.JWT_SECRET || "nexso-dev-secret";
 const JWT_EXPIRES = "7d";
 
 // ── POST /api/auth/login ───────────────────────────────────────────────────────
@@ -187,9 +187,17 @@ router.post("/otp/request", async (req, res) => {
       return res.status(404).json({ error: "phone_not_registered" });
     }
 
-    const OTP_TTL_SECONDS = parseInt(process.env.OTP_TTL_SECONDS || "300", 10);
-    const otpCode = String(Math.floor(100000 + Math.random() * 900000));
+    const OTP_TTL_SECONDS = parseInt(process.env.OTP_TTL_SECONDS || "300", 10) || 300;
+    // crypto.randomInt, not Math.random — a predictable PRNG here is a login bypass.
+    const otpCode = String(crypto.randomInt(100000, 1000000));
     const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000);
+
+    // Retire any outstanding codes first. Without this, every request widened
+    // the set of currently-valid OTPs instead of replacing it.
+    await dbQuery(
+      `UPDATE otp_tokens SET used = TRUE WHERE phone = $1 AND used = FALSE`,
+      [phone],
+    );
 
     await dbQuery(
       `INSERT INTO otp_tokens (phone, otp_code, expires_at) VALUES ($1, $2, $3)`,
@@ -246,8 +254,16 @@ router.post("/otp/verify", async (req, res) => {
 
     const tokenId = tokenResult.rows[0].id;
 
-    // Mark token used.
-    await dbQuery(`UPDATE otp_tokens SET used = TRUE WHERE id = $1`, [tokenId]);
+    // Burn the token atomically — the SELECT above and this UPDATE are separate
+    // round trips, so without the `used = FALSE` guard two concurrent verifies
+    // could both consume the same code.
+    const burned = await dbQuery(
+      `UPDATE otp_tokens SET used = TRUE WHERE id = $1 AND used = FALSE RETURNING id`,
+      [tokenId],
+    );
+    if (!burned?.rows?.length) {
+      return res.status(401).json({ error: "invalid_or_expired_otp" });
+    }
 
     // Look up the resident.
     const resResult = await dbQuery(
@@ -267,9 +283,12 @@ router.post("/otp/verify", async (req, res) => {
       return res.status(404).json({ error: "resident_not_found" });
     }
 
-    // Check if auth_account already exists for this phone.
+    // Check if a RESIDENT auth_account already exists for this phone. The
+    // portal_role filter matters: a staff account whose username happens to be
+    // this phone number must not be reassigned to the resident here.
     const existingAcc = await dbQuery(
-      `SELECT id, force_profile_setup FROM auth_accounts WHERE LOWER(username) = LOWER($1) LIMIT 1`,
+      `SELECT id, force_profile_setup FROM auth_accounts
+       WHERE LOWER(username) = LOWER($1) AND portal_role = 'RESIDENT' LIMIT 1`,
       [phone],
     );
 

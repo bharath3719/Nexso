@@ -13,8 +13,7 @@
  */
 
 import jwt from "jsonwebtoken";
-
-const JWT_SECRET = () => process.env.JWT_SECRET || "nexso-dev-secret";
+import { jwtSecret as JWT_SECRET } from "../utils/secrets.js";
 
 // ── Core validator ─────────────────────────────────────────────────────────────
 

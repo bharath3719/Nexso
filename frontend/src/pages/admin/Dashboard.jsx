@@ -2,12 +2,16 @@ import React, { useEffect, useState } from "react";
 import { IconButton, MessageBar, MessageBarType, Separator, Stack, Text } from "@fluentui/react";
 import { useJsonData } from "../../hooks/useJsonData.js";
 import { StatsCards } from "../../components/dashboard/StatsCards.jsx";
-import { TicketsTable } from "../../components/tickets/TicketsTable.jsx";
+import { TicketsTable, raisedByColumn, vendorColumn } from "../../components/tickets/TicketsTable.jsx";
 import { PageHeader } from "../../components/shared/PageHeader.jsx";
 import { T } from "../../styles/typography.js";
 import { filterIconButtonStyles } from "../../theme.js";
 
 const PAGE_SIZE = 5;
+
+// Stable reference — defined outside the component so TicketsTable's column memo
+// is not invalidated on every render.
+const dashboardExtraColumns = [raisedByColumn, vendorColumn];
 
 export function Dashboard() {
   const { loading, data, error, refetch } = useJsonData('/api/tickets?limit=200');
@@ -47,6 +51,7 @@ export function Dashboard() {
         emptyLabel="No tickets available."
         showFilters={showFilters}
         pageSize={PAGE_SIZE}
+        extraColumns={dashboardExtraColumns}
       />
     </Stack>
   );

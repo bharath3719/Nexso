@@ -16,6 +16,7 @@ import express from "express";
 import { dbQuery } from "../db/index.js";
 import { requireVendor } from "../middleware/auth.js";
 import { sendWhatsAppText } from "../services/notifications.js";
+import { toLimit, toOffset } from "../utils/params.js";
 
 const router = express.Router();
 
@@ -107,7 +108,7 @@ router.get("/notifications", async (req, res) => {
 router.get("/tickets", async (req, res) => {
   try {
     const vendorId = req.user.vendorId;
-    const { status, limit = 100, offset = 0 } = req.query;
+    const { status } = req.query;
 
     const params = [vendorId];
     let where = "t.assigned_vendor_id = $1";
@@ -115,7 +116,7 @@ router.get("/tickets", async (req, res) => {
       params.push(status);
       where += ` AND t.status = $${params.length}`;
     }
-    params.push(Number(limit), Number(offset));
+    params.push(toLimit(req.query.limit, 100, 200), toOffset(req.query.offset));
 
     const q = `
       SELECT
@@ -198,13 +199,18 @@ router.patch("/tickets/:id/status", async (req, res) => {
       });
     }
 
+    // Guard on the status we read, so two concurrent taps can't advance the
+    // ticket twice (ASSIGNED → IN_PROGRESS → RESOLVED in one go).
     const updated = await dbQuery(
       `UPDATE tickets
        SET status = $1, updated_at = NOW()
-       WHERE id = $2
+       WHERE id = $2 AND status = $3
        RETURNING id, ticket_id, status, updated_at`,
-      [nextStatus, ticketId],
+      [nextStatus, ticketId, ticket.status],
     );
+    if (!updated?.rows?.length) {
+      return res.status(409).json({ error: "status_changed", message: "This ticket was updated elsewhere. Refresh and try again." });
+    }
 
     // Write activity log
     await dbQuery(

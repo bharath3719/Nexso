@@ -301,11 +301,19 @@ export const api = {
       },
       /** Mark a due as paid / waived / pending */
       updateDue: (id, data) => patch(`/api/secretary/maintenance/dues/${id}`, data),
+      /** Dues where a resident reported a UPI payment awaiting confirmation */
+      pendingVerification: () => get('/api/secretary/maintenance/pending-verification'),
+      /** Confirm a resident-reported UPI payment → PAID */
+      verifyPayment: (id) => post(`/api/secretary/maintenance/dues/${id}/verify`, {}),
+      /** Reject a resident-reported UPI payment → back to PENDING */
+      rejectPayment: (id, reason) => post(`/api/secretary/maintenance/dues/${id}/reject`, { reason }),
       /** Generate dues for a given month (defaults to current month) */
       generate: (month) => post('/api/secretary/maintenance/generate', month ? { month } : {}),
       /** Send WhatsApp reminders to unpaid residents */
       sendReminders: (month) => post('/api/secretary/maintenance/send-reminders', month ? { month } : {}),
-      /** Toggle feature on/off + set UPI ID */
+      /** Payment settings (UPI ID, payee name, collection on/off) without loading dues */
+      getConfig: () => get('/api/secretary/maintenance/config'),
+      /** Toggle feature on/off + set UPI ID. Omit a field to keep it, pass '' to clear it. */
       updateConfig: (data) => patch('/api/secretary/maintenance/config', data),
       /** Get saved expense sheet for a month (or default empty template) */
       getExpenseSheet: (month) => get(`/api/secretary/maintenance/expense-sheet${month ? `?month=${month}` : ''}`),

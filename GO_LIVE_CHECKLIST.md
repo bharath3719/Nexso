@@ -75,7 +75,7 @@ Resident sends WhatsApp message
 
 ### 3.2 Vendor Login & Portal
 - ✅ **Vendor portal built** — Dashboard, tickets list, status update (ASSIGNED → IN_PROGRESS → RESOLVED) all exist.
-- 🔧 **Vendor credentials** — Use `backend/scripts/seed-vendor.js` to create a vendor account. Test login end-to-end.
+- 🔧 **Vendor credentials** — Create the vendor and its portal login from the admin portal (Vendors → add, then issue credentials; `routes/vendor.js` mints the `VENDOR` auth account). Test login end-to-end. *(The old `seed-vendor.js` script was removed — the API path supersedes it.)*
 - ✅ **Status transitions** — Vendor can only advance (ASSIGNED → IN_PROGRESS → RESOLVED), enforced server-side.
 - ❌ **Vendor notification to resident** — When vendor marks IN_PROGRESS, resident should get "Technician is on the way" — not implemented.
 

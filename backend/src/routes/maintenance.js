@@ -20,7 +20,9 @@ import { requireAdmin } from "../middleware/auth.js";
 import { sendWhatsAppText, sendWhatsAppDocument } from "../services/notifications.js";
 import { saveBillAndGetUrl } from "../services/billPdf.js";
 import { sendMaintenanceReminderEmail, isEmailConfigured } from "../services/email.js";
-import { createPaymentLink, isRazorpayConfigured } from "../services/razorpayService.js";
+import { createDuePaymentLink, activeProvider, isPaymentConfigured } from "../services/paymentLinks.js";
+import { isValidVpa } from "../services/upiService.js";
+import { toMonth, isValidMonth, dueDateFor } from "../utils/params.js";
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -46,7 +48,7 @@ function buildStats(dues) {
 router.get("/dues", async (req, res) => {
   try {
     const { societyId, month, status } = req.query;
-    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    const targetMonth = toMonth(month);
 
     let sql = `
       SELECT
@@ -126,9 +128,11 @@ router.post("/generate", async (req, res) => {
   try {
     const { societyId, month } = req.body || {};
     if (!societyId) return res.status(400).json({ error: "societyId_required" });
+    if (month && !isValidMonth(month)) {
+      return res.status(400).json({ error: "invalid_month", message: "month must be YYYY-MM." });
+    }
 
-    const targetMonth  = month || new Date().toISOString().slice(0, 7);
-    const [year, mon]  = targetMonth.split("-").map(Number);
+    const targetMonth = toMonth(month);
 
     const settings = await dbQuery(
       `SELECT ms.unit_id, ms.amount, ms.due_day
@@ -144,12 +148,13 @@ router.post("/generate", async (req, res) => {
       return res.json({ created: 0, skipped: 0, message: "No active maintenance settings found." });
     }
 
-    // Fetch society info needed for Razorpay link description
+    // Fetch society info needed for the payment link
     const socRes = await dbQuery(
-      `SELECT name FROM societies WHERE id = $1`, [societyId],
+      `SELECT name, maintenance_upi_id FROM societies WHERE id = $1`, [societyId],
     );
-    const societyName = socRes?.rows?.[0]?.name || "Society";
-    const rzpEnabled  = isRazorpayConfigured();
+    const societyName  = socRes?.rows?.[0]?.name || "Society";
+    const societyUpiId = socRes?.rows?.[0]?.maintenance_upi_id || null;
+    const payEnabled   = isPaymentConfigured();
 
     let created = 0;
     let skipped = 0;
@@ -166,8 +171,7 @@ router.post("/generate", async (req, res) => {
       const occupant = occupantRes?.rows?.[0];
       if (!occupant) { skipped++; continue; }
 
-      const dueDate    = new Date(Date.UTC(year, mon - 1, s.due_day));
-      const dueDateStr = dueDate.toISOString().slice(0, 10);
+      const dueDateStr = dueDateFor(targetMonth, s.due_day);
 
       const r = await dbQuery(
         `INSERT INTO maintenance_dues
@@ -183,9 +187,9 @@ router.post("/generate", async (req, res) => {
       const dueId = r.rows[0].id;
       created++;
 
-      // Create Razorpay payment link if configured
-      if (rzpEnabled) {
-        const link = await createPaymentLink({
+      // Mint a payment link (Razorpay or UPI) — persisted by the service
+      if (payEnabled) {
+        await createDuePaymentLink({
           dueId, societyId, residentId: occupant.id,
           residentName:  occupant.name  || "Resident",
           residentEmail: occupant.email || null,
@@ -193,20 +197,15 @@ router.post("/generate", async (req, res) => {
           amount:     s.amount,
           dueMonth:   targetMonth,
           dueDate:    dueDateStr,
-          societyName,
+          societyName, societyUpiId,
         });
-        if (link) {
-          await dbQuery(
-            `UPDATE maintenance_dues
-             SET razorpay_payment_link_id = $1, payment_link = $2
-             WHERE id = $3`,
-            [link.id, link.short_url, dueId],
-          );
-        }
       }
     }
 
-    return res.json({ created, skipped, month: targetMonth, razorpay: rzpEnabled });
+    return res.json({
+      created, skipped, month: targetMonth,
+      paymentProvider: payEnabled ? activeProvider() : null,
+    });
   } catch (err) {
     console.error("Maintenance generate error:", err);
     return res.status(500).json({ error: "internal_error" });
@@ -220,7 +219,7 @@ router.post("/generate", async (req, res) => {
 router.post("/send-reminders", async (req, res) => {
   try {
     const { societyId, month } = req.body || {};
-    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    const targetMonth = toMonth(month);
 
     let sql = `
       SELECT md.id, md.amount, md.due_date, md.payment_link,
@@ -382,20 +381,37 @@ router.get("/society/:id", async (req, res) => {
 
 // ── PATCH /api/maintenance/society/:id ────────────────────────────────────────
 
+// Same field semantics as PATCH /api/secretary/maintenance/config: omitted keeps,
+// `""` clears, anything else must be a well-formed VPA.
+
 router.patch("/society/:id", async (req, res) => {
   try {
     const { maintenance_enabled, maintenance_upi_id } = req.body || {};
+
+    const sets   = [];
+    const params = [];
+    const set = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+
+    if (maintenance_enabled != null) set("maintenance_enabled", !!maintenance_enabled);
+
+    if (maintenance_upi_id != null) {
+      const vpa = String(maintenance_upi_id).trim();
+      if (vpa && !isValidVpa(vpa)) {
+        return res.status(400).json({ error: "invalid_upi_id", message: "UPI ID must look like name@bank" });
+      }
+      set("maintenance_upi_id", vpa || null);
+    }
+
+    if (!sets.length) {
+      return res.status(400).json({ error: "no_changes", message: "Nothing to update." });
+    }
+
+    params.push(req.params.id);
     const result = await dbQuery(
-      `UPDATE societies SET
-         maintenance_enabled = COALESCE($1, maintenance_enabled),
-         maintenance_upi_id  = COALESCE($2, maintenance_upi_id)
-       WHERE id = $3
+      `UPDATE societies SET ${sets.join(", ")}
+       WHERE id = $${params.length}
        RETURNING id, name, maintenance_enabled, maintenance_upi_id`,
-      [
-        maintenance_enabled != null ? !!maintenance_enabled : null,
-        maintenance_upi_id  != null ? maintenance_upi_id    : null,
-        req.params.id,
-      ],
+      params,
     );
     if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
     return res.json({ society: result.rows[0] });

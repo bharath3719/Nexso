@@ -3,6 +3,7 @@ import { IconButton, Text } from "@fluentui/react";
 import nexsoLogo from "../../assets/logo.png";
 import { api } from "../../services/api.js";
 import { useShellState, ShellSidebar, SignOutButton } from "./LayoutShared.jsx";
+import { GuideLauncher } from "../guide/GuideLauncher.jsx";
 import { RouteErrorBoundary } from "../shared/ErrorBoundary.jsx";
 import "../../styles/Layout.css";
 import "../../styles/VendorLayout.css";
@@ -64,7 +65,8 @@ export function VendorLayout({ children, vendorName, onLogout }) {
             </div>
           )}
 
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", paddingRight: 8, gap: 4 }}>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", paddingRight: 8, gap: 8 }}>
+            <GuideLauncher role="VENDOR" />
             <div className="vendor-role-badge">Vendor</div>
             <NotifBell count={notifCount} onClick={() => navigate("/vendor/tickets?status=ASSIGNED")} />
             <SignOutButton onLogout={onLogout} />

@@ -6,7 +6,10 @@ import { api } from "../../services/api.js";
 import { formatINR, formatMonth, formatDateShort } from "../../utils/formatDate.js";
 import "../../styles/ResidentLayout.css";
 
-const STATUS_LABELS = { PENDING: "Pending", OVERDUE: "Overdue", PAID: "Paid", WAIVED: "Waived" };
+const STATUS_LABELS = {
+  PENDING: "Pending", OVERDUE: "Overdue", PAID: "Paid", WAIVED: "Waived",
+  PENDING_VERIFICATION: "Confirming",
+};
 
 function StatusPill({ status }) {
   return (
@@ -19,6 +22,8 @@ function StatusPill({ status }) {
 function DueRow({ due, onDownload, downloading }) {
   const isOverdue = due.status === "OVERDUE";
   const isPaid = due.status === "PAID" || due.status === "WAIVED";
+  // Resident has reported a UPI payment; the society is matching the UTR.
+  const isConfirming = due.status === "PENDING_VERIFICATION";
 
   return (
     <div className={`res-bill-row res-bill-due${isOverdue ? " res-bill-due--overdue" : ""}`}>
@@ -36,6 +41,11 @@ function DueRow({ due, onDownload, downloading }) {
             {due.payment_reference && ` · Ref: ${due.payment_reference}`}
           </div>
         )}
+        {isConfirming && (
+          <div className="res-bill-submeta">
+            Awaiting confirmation{due.claimed_utr && ` · UTR: ${due.claimed_utr}`}
+          </div>
+        )}
       </div>
 
       <div className={`res-bill-amount${isOverdue ? " res-bill-amount--overdue" : ""}`}>
@@ -49,7 +59,7 @@ function DueRow({ due, onDownload, downloading }) {
       </div>
 
       <div className="res-bill-actions">
-        {due.payment_link && !isPaid && (
+        {due.payment_link && !isPaid && !isConfirming && (
           <a href={due.payment_link} target="_blank" rel="noreferrer" className="res-bill-pay">
             Pay Now
           </a>
@@ -110,12 +120,16 @@ export function ResidentBilling() {
       pending: [], history: [],
       pendingTotal: 0, pendingCount: 0,
       overdueTotal: 0, overdueCount: 0,
+      confirmingTotal: 0, confirmingCount: 0,
       paidCount: 0,
     };
     for (const d of dues) {
       const amount = Number(d.amount || 0);
       if (d.status === "PENDING") { s.pending.push(d); s.pendingTotal += amount; s.pendingCount += 1; }
       else if (d.status === "OVERDUE") { s.pending.push(d); s.overdueTotal += amount; s.overdueCount += 1; }
+      // Already paid by the resident, so it stays out of the "you owe" totals —
+      // but it belongs in the pending tab until the society confirms it.
+      else if (d.status === "PENDING_VERIFICATION") { s.pending.push(d); s.confirmingTotal += amount; s.confirmingCount += 1; }
       else if (d.status === "PAID") { s.history.push(d); s.paidCount += 1; }
       else if (d.status === "WAIVED") { s.history.push(d); }
     }
@@ -159,6 +173,13 @@ export function ResidentBilling() {
               <div className={`res-bill-card-value${summary.overdueTotal > 0 ? " res-bill-card-value--alert" : ""}`}>{formatINR(summary.overdueTotal)}</div>
               <div className="res-bill-card-sub">{summary.overdueCount} overdue</div>
             </div>
+            {summary.confirmingCount > 0 && (
+              <div className="res-bill-card">
+                <div className="res-bill-card-label">Confirming</div>
+                <div className="res-bill-card-value">{formatINR(summary.confirmingTotal)}</div>
+                <div className="res-bill-card-sub">{summary.confirmingCount} awaiting</div>
+              </div>
+            )}
             <div className="res-bill-card">
               <div className="res-bill-card-label">Receipts</div>
               <div className="res-bill-card-value">{summary.paidCount}</div>

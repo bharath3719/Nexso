@@ -5,8 +5,9 @@ import { api } from "../../services/api.js";
 import {
   currentMonth, Toast, StatsGrid, DuesTable,
   useShowToast, ErrorBanner, MonthInput, StatusFilterSelect, MaintenanceConfigBar,
-  GenerateDuesButtons, updateDue,
+  GenerateDuesButtons, updateDue, computeUpdatedStats,
 } from "../../components/maintenance/MaintenanceShared.jsx";
+import { UpiSetupModal } from "../../components/maintenance/UpiSetupModal.jsx";
 import { ExpenseSheetTab } from "../../components/maintenance/ExpenseSheetTab.jsx";
 import { AccountTallyTab } from "../../components/maintenance/AccountTallyTab.jsx";
 import { formatMonth } from "../../utils/formatDate.js";
@@ -39,6 +40,13 @@ function CloseMonthModal({ month, stats, onClose, onConfirm, closing }) {
               <li>Arrears carry forward automatically to next month's bills</li>
             </ul>
           </div>
+          {stats?.pendingVerification > 0 && (
+            <div style={{ background: "#f5f3ff", border: "1px solid #8b5cf6", borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#5b21b6" }}>
+              <strong>{stats.pendingVerification} payment{stats.pendingVerification > 1 ? "s" : ""} still awaiting verification.</strong>
+              {" "}Confirm them against your bank statement first — once the month is
+              closed you'll have to reopen it to record them.
+            </div>
+          )}
           {stats && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16, fontSize: 13 }}>
               <div style={{ background: "#f0fdf4", padding: "8px 12px", borderRadius: 6 }}>
@@ -125,11 +133,11 @@ export function SecretaryMaintenance() {
   const [month,        setMonth]        = useState(currentMonth());
   const [dues,         setDues]         = useState([]);
   const [stats,        setStats]        = useState(null);
-  const [config,       setConfig]       = useState({ maintenance_enabled: true, maintenance_upi_id: "" });
+  const [config,       setConfig]       = useState({ maintenance_enabled: true, maintenance_upi_id: "", maintenance_payee_name: "" });
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [upiEdit,      setUpiEdit]      = useState("");
+  const [showUpi,      setShowUpi]      = useState(false);
   const [savingCfg,    setSavingCfg]    = useState(false);
   const [generating,   setGenerating]   = useState(false);
   const [reminding,    setReminding]    = useState(false);
@@ -156,10 +164,7 @@ export function SecretaryMaintenance() {
       setDues(data.dues   || []);
       setStats(data.stats || null);
       setClosure(closureData);
-      if (data.config) {
-        setConfig(data.config);
-        setUpiEdit(data.config.maintenance_upi_id || "");
-      }
+      if (data.config) setConfig(data.config);
     } catch {
       setError("Failed to load maintenance data.");
     } finally {
@@ -185,14 +190,15 @@ export function SecretaryMaintenance() {
     }
   };
 
-  const saveUpi = async () => {
+  const saveUpi = async (payload) => {
     setSavingCfg(true);
     try {
-      const data = await api.secretary.maintenance.updateConfig({ maintenance_upi_id: upiEdit.trim() || null });
-      setConfig((c) => ({ ...c, maintenance_upi_id: data.config.maintenance_upi_id }));
-      showToast("UPI ID saved.");
-    } catch {
-      showToast("Failed to save UPI ID.");
+      const data = await api.secretary.maintenance.updateConfig(payload);
+      setConfig((c) => ({ ...c, ...data.config }));
+      setShowUpi(false);
+      showToast(payload.maintenance_upi_id ? "UPI ID saved ✓" : "UPI ID removed.");
+    } catch (err) {
+      showToast(err?.data?.message || "Failed to save UPI ID.");
     } finally {
       setSavingCfg(false);
     }
@@ -284,6 +290,35 @@ export function SecretaryMaintenance() {
     [showToast],
   );
 
+  // Confirm / reject a UPI payment the resident reported via their pay link.
+  const applyDue = useCallback((updated) => {
+    setDues((prev) => {
+      const next = prev.map((d) => (d.id === updated.id ? { ...d, ...updated } : d));
+      setStats(computeUpdatedStats(next));
+      return next;
+    });
+  }, []);
+
+  const handleVerify = useCallback(async (id) => {
+    try {
+      const data = await api.secretary.maintenance.verifyPayment(id);
+      applyDue(data.due);
+      showToast("Payment confirmed ✓ — resident notified.");
+    } catch {
+      showToast("Failed to confirm payment.");
+    }
+  }, [applyDue, showToast]);
+
+  const handleReject = useCallback(async (id, reason) => {
+    try {
+      const data = await api.secretary.maintenance.rejectPayment(id, reason);
+      applyDue(data.due);
+      showToast("Marked unverified — due is pending again.");
+    } catch {
+      showToast("Failed to reject payment.");
+    }
+  }, [applyDue, showToast]);
+
   const isOff    = !config.maintenance_enabled;
   const isClosed = closure?.status === "CLOSED";
 
@@ -299,10 +334,9 @@ export function SecretaryMaintenance() {
         offText="Currently OFF — residents will not receive reminders."
         onText="Currently ON — dues will be generated and reminders sent automatically."
         savingCfg={savingCfg}
-        upiEdit={upiEdit}
+        upiId={config.maintenance_upi_id}
         onToggle={toggleFeature}
-        onUpiChange={setUpiEdit}
-        onSaveUpi={saveUpi}
+        onEditUpi={() => setShowUpi(true)}
       />
 
       <div className="maint-tabs">
@@ -391,6 +425,8 @@ export function SecretaryMaintenance() {
               : `No dues for ${month}. Build an expense sheet, then click "Generate Dues".`}
             onUpdate={handleUpdate}
             onDownloadPdf={handleDownloadInvoicePdf}
+            onVerify={handleVerify}
+            onReject={handleReject}
           />
         </>
       )}
@@ -405,6 +441,15 @@ export function SecretaryMaintenance() {
       {showReopen && (
         <ReopenMonthModal month={month} onClose={() => setShowReopen(false)}
           onConfirm={handleReopenMonth} reopening={reopening} />
+      )}
+      {showUpi && (
+        <UpiSetupModal
+          currentUpiId={config.maintenance_upi_id || ""}
+          currentPayeeName={config.maintenance_payee_name || ""}
+          saving={savingCfg}
+          onSave={saveUpi}
+          onClose={() => setShowUpi(false)}
+        />
       )}
 
       <Toast msg={toast} />

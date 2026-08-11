@@ -229,6 +229,7 @@
 .res-badge--OVERDUE { background: #fee2e2; color: #991b1b; }
 .res-badge--PAID    { background: #dcfce7; color: #166534; }
 .res-badge--WAIVED  { background: #f1f5f9; color: #475569; }
+.res-badge--PENDING_VERIFICATION { background: #f5f3ff; color: #6d28d9; }
 
 /* Square status tags (complaints / tickets) */
 .res-tag {

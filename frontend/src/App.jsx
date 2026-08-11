@@ -375,8 +375,6 @@ function ResidentSecretaryLogin({ onLogin, onOtpLogin, onClearError, error, load
       )}
 
       <div className="login-portal-links">
-        <button className="login-portal-link" type="button" onClick={() => navigate("/admin")}>Admin Portal</button>
-        {" · "}
         <button className="login-portal-link" type="button" onClick={() => navigate("/vendors")}>Vendor Portal</button>
         {" · "}
         <button className="login-portal-link" type="button" onClick={() => navigate("/guard")}>Guard Portal</button>

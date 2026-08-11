@@ -1,5 +1,5 @@
 -- Seed minimal demo data for Nexso
--- Requires tables from docs/schema.sql or ensureSchema()
+-- Requires tables from ensureSchema() (src/db/index.js) — run `npm run db:schema`
 
 -- 1) Ensure a society exists and capture its id via name lookup
 INSERT INTO societies (name)

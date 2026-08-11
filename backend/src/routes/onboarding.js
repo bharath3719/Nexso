@@ -1,5 +1,6 @@
 import express from "express";
 import bcrypt  from "bcryptjs";
+import crypto  from "crypto";
 import { dbQuery } from "../db/index.js";
 import { requireAdmin } from "../middleware/auth.js";
 
@@ -8,20 +9,25 @@ router.use(requireAdmin);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/** Pick `n` chars from `chars` using a CSPRNG. */
+function randomFrom(chars, n) {
+  let out = "";
+  for (let i = 0; i < n; i++) out += chars[crypto.randomInt(chars.length)];
+  return out;
+}
+
 function genBuildingId() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let id = "BLD-";
-  for (let i = 0; i < 6; i++) id += chars[Math.floor(Math.random() * chars.length)];
-  return id;
+  return `BLD-${randomFrom("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6)}`;
 }
 
 function genTempPassword() {
-  // 10-char mix of letters + digits, easy to type
-  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
-  let p = "Nx@";
-  for (let i = 0; i < 7; i++) p += chars[Math.floor(Math.random() * chars.length)];
-  return p;
+  // 10-char mix of letters + digits, easy to type. Math.random() is not a
+  // CSPRNG — its output is predictable, and this password is the initial
+  // credential for a society admin account.
+  return `Nx@${randomFrom("abcdefghjkmnpqrstuvwxyz23456789", 7)}`;
 }
+
+const RESIDENT_TYPES = ["OWNER", "TENANT"];
 
 // ── GET /api/onboarding/societies ─────────────────────────────────────────────
 // List all societies with unit + resident counts
@@ -361,6 +367,12 @@ router.post("/societies/:id/residents", async (req, res) => {
 
       const unitId = unitRes.rows[0].id;
       const normalizedType = (r.resident_type || "OWNER").toUpperCase();
+      // The unit-occupancy indexes only cover OWNER/TENANT, so anything else
+      // slips past the one-per-unit rule entirely.
+      if (!RESIDENT_TYPES.includes(normalizedType)) {
+        errors.push({ unit: r.unit_number, reason: "invalid_resident_type" });
+        continue;
+      }
 
       // One OWNER + one TENANT per unit
       const occupancyCheck = await client.query(
@@ -469,6 +481,9 @@ router.post("/societies/:id/units/:unitId/residents", async (req, res) => {
 
     // One OWNER + one TENANT per unit
     const normalizedType = (resident_type || "OWNER").toUpperCase();
+    if (!RESIDENT_TYPES.includes(normalizedType)) {
+      return res.status(400).json({ error: "invalid_resident_type", message: "resident_type must be OWNER or TENANT." });
+    }
     const occupancyCheck = await dbQuery(
       `SELECT id FROM residents WHERE unit_id = $1 AND resident_type = $2 LIMIT 1`,
       [unitId, normalizedType],
@@ -567,7 +582,35 @@ router.patch("/societies/:id/residents/:residentId", async (req, res) => {
   if (!name?.trim()) return res.status(400).json({ error: "name_required" });
   if (!phone?.trim()) return res.status(400).json({ error: "phone_required" });
 
+  const normalizedType = (resident_type || "OWNER").toUpperCase();
+  if (!RESIDENT_TYPES.includes(normalizedType)) {
+    return res.status(400).json({ error: "invalid_resident_type", message: "resident_type must be OWNER or TENANT." });
+  }
+
   try {
+    const currentRes = await dbQuery(
+      `SELECT id, unit_id FROM residents WHERE id = $1 AND society_id = $2`,
+      [residentId, id],
+    );
+    if (!currentRes?.rows?.length) return res.status(404).json({ error: "not_found" });
+
+    // Check occupancy BEFORE writing. Running this after the UPDATE (as it used
+    // to) never fired: the partial unique index rejects the write first, so a
+    // genuine conflict surfaced as a 500 instead of this 409.
+    const unitId = currentRes.rows[0].unit_id;
+    if (unitId) {
+      const conflict = await dbQuery(
+        `SELECT id FROM residents WHERE unit_id = $1 AND resident_type = $2 AND id <> $3 LIMIT 1`,
+        [unitId, normalizedType, residentId],
+      );
+      if (conflict?.rows?.length) {
+        return res.status(409).json({
+          error: "occupancy_conflict",
+          message: `This unit already has an ${normalizedType}. Remove the existing ${normalizedType} before reassigning.`,
+        });
+      }
+    }
+
     const result = await dbQuery(
       `UPDATE residents SET
          name              = $1,
@@ -587,7 +630,7 @@ router.patch("/societies/:id/residents/:residentId", async (req, res) => {
         aadhar_number || null,
         preferred_contact || "WHATSAPP",
         bhk || null,
-        resident_type || "OWNER",
+        normalizedType,
         Number(family_members) || 0,
         residentId,
         id,
@@ -596,21 +639,6 @@ router.patch("/societies/:id/residents/:residentId", async (req, res) => {
     if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
 
     const resident = result.rows[0];
-
-    // If resident_type changed, ensure the new slot isn't already occupied
-    if (resident_type) {
-      const normalizedType = resident_type.toUpperCase();
-      const conflict = await dbQuery(
-        `SELECT id FROM residents WHERE unit_id = $1 AND resident_type = $2 AND id <> $3 LIMIT 1`,
-        [resident.unit_id, normalizedType, residentId],
-      );
-      if (conflict?.rows?.length) {
-        return res.status(409).json({
-          error: "occupancy_conflict",
-          message: `This unit already has an ${normalizedType}. Remove the existing ${normalizedType} before reassigning.`,
-        });
-      }
-    }
 
     // Upsert unit-level maintenance settings when field is explicitly sent
     if (maintenance_enabled !== undefined || maintenance_amount !== undefined || maintenance_due_day !== undefined) {

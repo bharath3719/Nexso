@@ -2,6 +2,7 @@ import React from "react";
 import { Text } from "@fluentui/react";
 import nexsoLogo from "../../assets/logo.png";
 import { useShellState, ShellSidebar, SignOutButton } from "./LayoutShared.jsx";
+import { GuideLauncher } from "../guide/GuideLauncher.jsx";
 import { RouteErrorBoundary } from "../shared/ErrorBoundary.jsx";
 import "../../styles/Layout.css";
 import "../../styles/SecretaryLayout.css";
@@ -38,7 +39,8 @@ export function SecretaryLayout({ children, societyName, onLogout }) {
             </div>
           )}
 
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", paddingRight: 8, gap: 4 }}>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", paddingRight: 8, gap: 8 }}>
+            <GuideLauncher role="SOCIETY_ADMIN" />
             <div className="secretary-role-badge">Secretary</div>
             <SignOutButton onLogout={onLogout} />
           </div>

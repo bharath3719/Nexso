@@ -1,11 +1,26 @@
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { fileURLToPath } from "url";
 import PDFDocument from "pdfkit";
 import { dbQuery } from "../db/index.js";
+import { previousMonth, isValidMonth } from "../utils/params.js";
+import { billUrlSecret } from "../utils/secrets.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const BILLS_DIR = path.join(__dirname, "..", "..", "bills");
+
+/**
+ * Where generated bill PDFs live. Exported so server.js serves /bills from the
+ * same directory this writes to — two independently-built paths drift.
+ *
+ * These files must outlive the container. On Render (and any host with an
+ * ephemeral filesystem) the default in-repo path is wiped on every deploy,
+ * restart and instance move, which 404s every bill link already delivered to a
+ * resident. Set BILLS_DIR to a mounted persistent disk there.
+ */
+export const BILLS_DIR = process.env.BILLS_DIR
+  ? path.resolve(process.env.BILLS_DIR)
+  : path.join(__dirname, "..", "..", "bills");
 
 fs.mkdirSync(BILLS_DIR, { recursive: true });
 
@@ -35,13 +50,15 @@ function inr(n) {
 }
 
 function monthLabel(m) {
-  if (!m) return "";
+  if (!isValidMonth(m)) return m || "";
   return new Date(m + "-01").toLocaleString("en-IN", { month: "long", year: "numeric" });
 }
 
 function fmtDate(d) {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const parsed = new Date(d);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 const BRAND   = "#2563EB";
@@ -86,8 +103,11 @@ export async function computeBill(societyId, residentId, month) {
        WHERE r.id = $1 AND r.society_id = $2`,
       [residentId, societyId],
     ),
+    // Must match the divisor the secretary's bill-preview uses, or the PDF
+    // total won't agree with the figure the preview showed.
     dbQuery(
-      `SELECT COUNT(*) AS count FROM maintenance_settings WHERE society_id = $1 AND enabled = TRUE`,
+      `SELECT COUNT(*) AS count FROM maintenance_settings
+       WHERE society_id = $1 AND enabled = TRUE AND unit_id IS NOT NULL`,
       [societyId],
     ),
     dbQuery(
@@ -119,9 +139,7 @@ export async function computeBill(societyId, residentId, month) {
   const variableTotal = variableItems.reduce((s, i) => s + i.per_unit, 0);
   const expenseShare  = Math.round((fixedTotal + variableTotal) * 100) / 100;
 
-  const prevMonthDate = new Date(month + "-01");
-  prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
-  const prevMonth = prevMonthDate.toISOString().slice(0, 7);
+  const prevMonth = previousMonth(month);
 
   const prevRes = await dbQuery(
     `SELECT COALESCE(SUM(amount), 0) AS total
@@ -576,10 +594,28 @@ export function generateClosurePdf(closure, expenseSheet, society) {
 
 // ── saveBillAndGetUrl (unchanged — used by WhatsApp flow) ─────────────────────
 
+/**
+ * Unguessable but stable filename for a resident's bill.
+ *
+ * `bill-{societyId}-{residentId}-{month}.pdf` was trivially enumerable, and
+ * /bills is served as unauthenticated static files — so anyone could walk small
+ * integers and pull every resident's name, unit and arrears. Deriving the name
+ * from a keyed HMAC keeps it stable (regenerating a bill reuses one file rather
+ * than growing the directory) while making it infeasible to guess.
+ */
+function billFilename(societyId, residentId, month) {
+  const digest = crypto
+    .createHmac("sha256", billUrlSecret())
+    .update(`bill:${societyId}:${residentId}:${month}`)
+    .digest("hex")
+    .slice(0, 32);
+  return `bill-${digest}.pdf`;
+}
+
 export async function saveBillAndGetUrl(societyId, residentId, month, paymentLink = null, upiId = null) {
   const bill     = await computeBill(societyId, residentId, month);
   const buffer   = await generateBillPdf(bill, paymentLink, upiId);
-  const filename = `bill-${societyId}-${residentId}-${month}.pdf`;
+  const filename = billFilename(societyId, residentId, month);
   const filepath = path.join(BILLS_DIR, filename);
   fs.writeFileSync(filepath, buffer);
   const baseUrl = (process.env.BACKEND_PUBLIC_URL || "").replace(/\/+$/, "");

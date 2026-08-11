@@ -19,11 +19,15 @@ import { dbQuery } from "../db/index.js";
 import { requireSecretary } from "../middleware/auth.js";
 import { sendWhatsAppText } from "../services/notifications.js";
 import { sendMaintenanceReminderEmail, isEmailConfigured } from "../services/email.js";
-import { createPaymentLink, isRazorpayConfigured } from "../services/razorpayService.js";
+import { createDuePaymentLink, activeProvider, isPaymentConfigured } from "../services/paymentLinks.js";
+import { isValidVpa } from "../services/upiService.js";
 import {
   generateBillPdf, generateCollectionRegisterPdf, generateClosurePdf,
   getOrCreateInvoiceNumber, computeBill,
 } from "../services/billPdf.js";
+import {
+  toLimit, toOffset, toMonth, toYear, isValidMonth, previousMonth, dueDateFor,
+} from "../utils/params.js";
 
 const router = express.Router();
 
@@ -519,7 +523,7 @@ router.delete("/residents/:id", async (req, res) => {
 router.get("/tickets", async (req, res) => {
   try {
     const societyId = req.user.societyId;
-    const { status, limit = 50, offset = 0 } = req.query;
+    const { status } = req.query;
 
     let sql = `
       SELECT t.*,
@@ -537,7 +541,7 @@ router.get("/tickets", async (req, res) => {
     }
 
     sql += ` ORDER BY t.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(Number(limit), Number(offset));
+    params.push(toLimit(req.query.limit, 50, 200), toOffset(req.query.offset));
 
     const result = await dbQuery(sql, params);
     return res.json({ tickets: result?.rows || [] });
@@ -554,7 +558,7 @@ router.get("/maintenance", async (req, res) => {
   try {
     const societyId   = req.user.societyId;
     const { month, status } = req.query;
-    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    const targetMonth = toMonth(month);
 
     let sql = `
       SELECT
@@ -586,6 +590,7 @@ router.get("/maintenance", async (req, res) => {
       total:           dues.length,
       paid:            dues.filter((d) => d.status === "PAID").length,
       pending:         dues.filter((d) => d.status === "PENDING").length,
+      pendingVerification: dues.filter((d) => d.status === "PENDING_VERIFICATION").length,
       overdue:         dues.filter((d) => d.status === "OVERDUE").length,
       waived:          dues.filter((d) => d.status === "WAIVED").length,
       totalAmount:     dues.reduce((s, d) => s + Number(d.amount || 0), 0),
@@ -594,7 +599,7 @@ router.get("/maintenance", async (req, res) => {
 
     // Also fetch society maintenance config
     const socRes = await dbQuery(
-      `SELECT maintenance_enabled, maintenance_upi_id FROM societies WHERE id = $1`,
+      `SELECT maintenance_enabled, maintenance_upi_id, maintenance_payee_name FROM societies WHERE id = $1`,
       [societyId],
     );
     const soc = socRes?.rows?.[0] || {};
@@ -614,7 +619,7 @@ router.patch("/maintenance/dues/:id", async (req, res) => {
     const { id }    = req.params;
     const { status, payment_reference, notes } = req.body || {};
 
-    const VALID = ["PENDING", "PAID", "OVERDUE", "WAIVED"];
+    const VALID = ["PENDING", "PENDING_VERIFICATION", "PAID", "OVERDUE", "WAIVED"];
     if (status && !VALID.includes(status)) {
       return res.status(400).json({ error: "invalid_status" });
     }
@@ -658,6 +663,174 @@ router.patch("/maintenance/dues/:id", async (req, res) => {
   }
 });
 
+/**
+ * True when the due's month has been formally closed — the books are locked and
+ * no status change may be recorded against it.
+ */
+async function isDueMonthClosed(dueId, societyId) {
+  const r = await dbQuery(
+    `SELECT mc.status
+       FROM maintenance_dues md
+       JOIN monthly_closures mc
+         ON mc.society_id = md.society_id AND mc.month = md.due_month
+      WHERE md.id = $1 AND md.society_id = $2`,
+    [dueId, societyId],
+  );
+  return r?.rows?.[0]?.status === "CLOSED";
+}
+
+// ── GET /api/secretary/maintenance/pending-verification ───────────────────────
+// Dues where the resident has paid by UPI and declared a UTR, waiting for the
+// secretary to match it against the society's bank statement.
+
+router.get("/maintenance/pending-verification", async (req, res) => {
+  try {
+    const result = await dbQuery(
+      `SELECT md.id, md.amount, md.due_month, md.due_date,
+              md.claimed_utr, md.claimed_at, md.payment_mode,
+              r.name AS resident_name, r.phone AS resident_phone,
+              u.unit_number,
+              COALESCE(td.name, tf.name) AS tower_name
+         FROM maintenance_dues md
+         JOIN residents r ON r.id = md.resident_id
+         LEFT JOIN units  u  ON u.id  = r.unit_id
+         LEFT JOIN towers td ON td.id = u.tower_id
+         LEFT JOIN floors f  ON f.id  = u.floor_id
+         LEFT JOIN towers tf ON tf.id = f.tower_id
+        WHERE md.society_id = $1 AND md.status = 'PENDING_VERIFICATION'
+        ORDER BY md.claimed_at ASC`,
+      [req.user.societyId],
+    );
+    return res.json({ dues: result?.rows || [] });
+  } catch (err) {
+    console.error("Secretary pending-verification error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/secretary/maintenance/dues/:id/verify ───────────────────────────
+// Confirms a claimed UPI payment → PAID. The UTR becomes the payment reference.
+
+router.post("/maintenance/dues/:id/verify", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+
+    if (await isDueMonthClosed(req.params.id, societyId)) {
+      return res.status(403).json({
+        error: "month_closed",
+        message: "This month is closed. Reopen it before confirming payments.",
+      });
+    }
+
+    const result = await dbQuery(
+      `UPDATE maintenance_dues
+          SET status            = 'PAID',
+              payment_date      = COALESCE(payment_date, NOW()),
+              payment_reference = COALESCE(payment_reference,
+                                    CASE WHEN claimed_utr IS NOT NULL
+                                         THEN 'UTR:' || claimed_utr || ' | via UPI'
+                                         ELSE NULL END),
+              payment_mode      = COALESCE(payment_mode, 'UPI'),
+              verified_by       = $1,
+              verified_at       = NOW(),
+              updated_at        = NOW()
+        WHERE id = $2 AND society_id = $3 AND status = 'PENDING_VERIFICATION'
+        RETURNING *`,
+      [req.user.id, req.params.id, societyId],
+    );
+
+    if (!result?.rows?.length) {
+      return res.status(404).json({ error: "not_found_or_not_pending_verification" });
+    }
+
+    const due = result.rows[0];
+
+    // Tell the resident their payment is confirmed — closes the loop that
+    // started with the pay link.
+    const r = await dbQuery(
+      `SELECT r.phone, r.name, s.name AS society_name
+         FROM residents r JOIN societies s ON s.id = $2
+        WHERE r.id = $1`,
+      [due.resident_id, societyId],
+    );
+    const resident = r?.rows?.[0];
+    if (resident?.phone) {
+      const amountFmt = Number(due.amount).toLocaleString("en-IN");
+      sendWhatsAppText(
+        resident.phone,
+        `✅ Hi ${resident.name}, your maintenance payment of ₹${amountFmt} for ` +
+        `${due.due_month} has been confirmed. Thank you!\n\n— ${resident.society_name} Management`,
+      ).catch(() => {});
+    }
+
+    return res.json({ due });
+  } catch (err) {
+    console.error("Secretary verify payment error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ── POST /api/secretary/maintenance/dues/:id/reject ───────────────────────────
+// The claimed UTR doesn't appear in the bank statement → back to PENDING so the
+// resident can pay (or re-declare) using the same link.
+
+router.post("/maintenance/dues/:id/reject", async (req, res) => {
+  try {
+    const societyId = req.user.societyId;
+    const reason    = (req.body?.reason || "").trim() || "Payment could not be verified";
+
+    if (await isDueMonthClosed(req.params.id, societyId)) {
+      return res.status(403).json({
+        error: "month_closed",
+        message: "This month is closed. Reopen it before rejecting payments.",
+      });
+    }
+
+    const result = await dbQuery(
+      `UPDATE maintenance_dues
+          SET status      = 'PENDING',
+              notes       = COALESCE(notes || E'\\n', '') ||
+                            'Rejected ' || TO_CHAR(NOW(), 'YYYY-MM-DD') ||
+                            ' (UTR ' || COALESCE(claimed_utr, '—') || '): ' || $1,
+              claimed_utr = NULL,
+              claimed_at  = NULL,
+              verified_by = $2,
+              verified_at = NOW(),
+              updated_at  = NOW()
+        WHERE id = $3 AND society_id = $4 AND status = 'PENDING_VERIFICATION'
+        RETURNING *`,
+      [reason, req.user.id, req.params.id, societyId],
+    );
+
+    if (!result?.rows?.length) {
+      return res.status(404).json({ error: "not_found_or_not_pending_verification" });
+    }
+
+    const due = result.rows[0];
+
+    const r = await dbQuery(
+      `SELECT r.phone, r.name, s.name AS society_name
+         FROM residents r JOIN societies s ON s.id = $2
+        WHERE r.id = $1`,
+      [due.resident_id, societyId],
+    );
+    const resident = r?.rows?.[0];
+    if (resident?.phone) {
+      sendWhatsAppText(
+        resident.phone,
+        `⚠️ Hi ${resident.name}, we couldn't verify your maintenance payment for ` +
+        `${due.due_month}.\n\nReason: ${reason}\n\nPlease check with the society ` +
+        `office before paying again.\n\n— ${resident.society_name} Management`,
+      ).catch(() => {});
+    }
+
+    return res.json({ due });
+  } catch (err) {
+    console.error("Secretary reject payment error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
 // ── POST /api/secretary/maintenance/generate ──────────────────────────────────
 // Generates dues for the current (or specified) month for all enabled residents.
 
@@ -665,8 +838,10 @@ router.post("/maintenance/generate", async (req, res) => {
   try {
     const societyId   = req.user.societyId;
     const { month }   = req.body || {};
-    const targetMonth = month || new Date().toISOString().slice(0, 7);
-    const [year, mon] = targetMonth.split("-").map(Number);
+    if (month && !isValidMonth(month)) {
+      return res.status(400).json({ error: "invalid_month", message: "month must be YYYY-MM." });
+    }
+    const targetMonth = toMonth(month);
 
     const settings = await dbQuery(
       `SELECT unit_id, amount, due_day, bill_recipient FROM maintenance_settings
@@ -680,12 +855,13 @@ router.post("/maintenance/generate", async (req, res) => {
       return res.json({ created: 0, skipped: 0, message: "No active maintenance settings found." });
     }
 
-    // Fetch society name for Razorpay link description
+    // Fetch society info needed for the payment link
     const socRes = await dbQuery(
-      `SELECT name FROM societies WHERE id = $1`, [societyId],
+      `SELECT name, maintenance_upi_id FROM societies WHERE id = $1`, [societyId],
     );
-    const societyName = socRes?.rows?.[0]?.name || "Society";
-    const rzpEnabled  = isRazorpayConfigured();
+    const societyName  = socRes?.rows?.[0]?.name || "Society";
+    const societyUpiId = socRes?.rows?.[0]?.maintenance_upi_id || null;
+    const payEnabled   = isPaymentConfigured();
 
     // If an expense sheet exists for this month, add per-unit share to each unit's base
     const sheetRes = await dbQuery(
@@ -727,8 +903,7 @@ router.post("/maintenance/generate", async (req, res) => {
       const occupant = occupantRes?.rows?.[0];
       if (!occupant) { skipped++; continue; }
 
-      const dueDate    = new Date(Date.UTC(year, mon - 1, s.due_day));
-      const dueDateStr = dueDate.toISOString().slice(0, 10);
+      const dueDateStr  = dueDateFor(targetMonth, s.due_day);
       const baseAmount  = Number(s.amount);
       const totalAmount = Math.round((baseAmount + expenseShare) * 100) / 100;
 
@@ -746,9 +921,9 @@ router.post("/maintenance/generate", async (req, res) => {
       const dueId = r.rows[0].id;
       created++;
 
-      // Create Razorpay payment link if configured
-      if (rzpEnabled) {
-        const link = await createPaymentLink({
+      // Mint a payment link (Razorpay or UPI) — persisted by the service
+      if (payEnabled) {
+        await createDuePaymentLink({
           dueId, societyId, residentId: occupant.id,
           residentName:  occupant.name  || "Resident",
           residentEmail: occupant.email || null,
@@ -756,20 +931,15 @@ router.post("/maintenance/generate", async (req, res) => {
           amount:     totalAmount,
           dueMonth:   targetMonth,
           dueDate:    dueDateStr,
-          societyName,
+          societyName, societyUpiId,
         });
-        if (link) {
-          await dbQuery(
-            `UPDATE maintenance_dues
-             SET razorpay_payment_link_id = $1, payment_link = $2
-             WHERE id = $3`,
-            [link.id, link.short_url, dueId],
-          );
-        }
       }
     }
 
-    return res.json({ created, skipped, month: targetMonth, razorpay: rzpEnabled });
+    return res.json({
+      created, skipped, month: targetMonth,
+      paymentProvider: payEnabled ? activeProvider() : null,
+    });
   } catch (err) {
     console.error("Secretary maintenance generate error:", err);
     return res.status(500).json({ error: "internal_error" });
@@ -782,7 +952,7 @@ router.post("/maintenance/send-reminders", async (req, res) => {
   try {
     const societyId   = req.user.societyId;
     const { month }   = req.body || {};
-    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    const targetMonth = toMonth(month);
 
     const socRes = await dbQuery(
       `SELECT name, maintenance_upi_id FROM societies WHERE id = $1`,
@@ -897,7 +1067,7 @@ router.get("/maintenance/expense-sheet", async (req, res) => {
   try {
     const societyId   = req.user.societyId;
     const { month }   = req.query;
-    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    const targetMonth = toMonth(month);
 
     const [sheetRes, countRes] = await Promise.all([
       dbQuery(
@@ -941,7 +1111,14 @@ router.put("/maintenance/expense-sheet", async (req, res) => {
   try {
     const societyId = req.user.societyId;
     const { month, fixed_items, variable_items, interest_rate } = req.body || {};
-    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    if (month && !isValidMonth(month)) {
+      return res.status(400).json({ error: "invalid_month", message: "month must be YYYY-MM." });
+    }
+    if (fixed_items    !== undefined && !Array.isArray(fixed_items) ||
+        variable_items !== undefined && !Array.isArray(variable_items)) {
+      return res.status(400).json({ error: "invalid_items", message: "fixed_items and variable_items must be arrays." });
+    }
+    const targetMonth = toMonth(month);
 
     const result = await dbQuery(
       `INSERT INTO maintenance_expense_sheets
@@ -976,9 +1153,10 @@ router.get("/maintenance/bill-preview", async (req, res) => {
   try {
     const societyId   = req.user.societyId;
     const { month, residentId } = req.query;
-    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    const targetMonth = toMonth(month);
 
     if (!residentId) return res.status(400).json({ error: "resident_id_required" });
+    if (!Number.isFinite(Number(residentId))) return res.status(400).json({ error: "invalid_resident_id" });
 
     const [sheetRes, resRes, countRes, socRes] = await Promise.all([
       dbQuery(
@@ -1033,9 +1211,7 @@ router.get("/maintenance/bill-preview", async (req, res) => {
     const expenseShare  = Math.round((fixedTotal + variableTotal) * 100) / 100;
 
     // Previous month's unpaid dues
-    const prevMonthDate = new Date(targetMonth + "-01");
-    prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
-    const prevMonth = prevMonthDate.toISOString().slice(0, 7);
+    const prevMonth = previousMonth(targetMonth);
 
     const prevRes = await dbQuery(
       `SELECT COALESCE(SUM(amount), 0) AS total
@@ -1080,25 +1256,69 @@ router.get("/maintenance/bill-preview", async (req, res) => {
   }
 });
 
+// ── GET /api/secretary/maintenance/config ─────────────────────────────────────
+// Payment settings on their own, so the settings screen doesn't have to pull a
+// whole month of dues just to show the UPI ID.
+
+router.get("/maintenance/config", async (req, res) => {
+  try {
+    const result = await dbQuery(
+      `SELECT id, name, maintenance_enabled, maintenance_upi_id, maintenance_payee_name
+         FROM societies WHERE id = $1`,
+      [req.user.societyId],
+    );
+    if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
+    return res.json({ config: result.rows[0] });
+  } catch (err) {
+    console.error("Secretary maintenance config get error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
 // ── PATCH /api/secretary/maintenance/config ───────────────────────────────────
 // Toggle feature on/off + update UPI ID for the society.
+//
+// Each field is optional: omitted (or null) leaves the column alone, `""` clears
+// it, anything else overwrites. The old COALESCE form could not express "clear",
+// so a blank UPI ID was silently discarded while the caller was told it saved.
 
 router.patch("/maintenance/config", async (req, res) => {
   try {
     const societyId = req.user.societyId;
-    const { maintenance_enabled, maintenance_upi_id } = req.body || {};
+    const { maintenance_enabled, maintenance_upi_id, maintenance_payee_name } = req.body || {};
 
+    const sets   = [];
+    const params = [];
+    const set = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+
+    if (maintenance_enabled != null) set("maintenance_enabled", !!maintenance_enabled);
+
+    if (maintenance_upi_id != null) {
+      // A typo here routes every resident's payment to the wrong account, so a
+      // malformed VPA is rejected outright rather than stored and discovered later.
+      const vpa = String(maintenance_upi_id).trim();
+      if (vpa && !isValidVpa(vpa)) {
+        return res.status(400).json({ error: "invalid_upi_id", message: "UPI ID must look like name@bank" });
+      }
+      set("maintenance_upi_id", vpa || null);
+    }
+
+    if (maintenance_payee_name != null) {
+      // `pn` in the UPI intent URI is truncated to 50 chars by buildUpiUri anyway.
+      const payee = String(maintenance_payee_name).trim().slice(0, 50);
+      set("maintenance_payee_name", payee || null);
+    }
+
+    if (!sets.length) {
+      return res.status(400).json({ error: "no_changes", message: "Nothing to update." });
+    }
+
+    params.push(societyId);
     const result = await dbQuery(
-      `UPDATE societies SET
-         maintenance_enabled = COALESCE($1, maintenance_enabled),
-         maintenance_upi_id  = COALESCE($2, maintenance_upi_id)
-       WHERE id = $3
-       RETURNING id, maintenance_enabled, maintenance_upi_id`,
-      [
-        maintenance_enabled != null ? !!maintenance_enabled : null,
-        maintenance_upi_id  != null ? maintenance_upi_id    : null,
-        societyId,
-      ],
+      `UPDATE societies SET ${sets.join(", ")}
+       WHERE id = $${params.length}
+       RETURNING id, maintenance_enabled, maintenance_upi_id, maintenance_payee_name`,
+      params,
     );
     if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
     return res.json({ config: result.rows[0] });
@@ -1203,7 +1423,7 @@ router.get("/maintenance/collection-register/pdf", async (req, res) => {
   try {
     const societyId   = req.user.societyId;
     const { month }   = req.query;
-    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    const targetMonth = toMonth(month);
 
     const [duesRes, socRes, closureRes] = await Promise.all([
       dbQuery(
@@ -1282,6 +1502,7 @@ router.post("/maintenance/close-month", async (req, res) => {
     const societyId = req.user.societyId;
     const { month, notes } = req.body || {};
     if (!month) return res.status(400).json({ error: "month_required" });
+    if (!isValidMonth(month)) return res.status(400).json({ error: "invalid_month", message: "month must be YYYY-MM." });
 
     // Idempotency — already closed?
     const existing = await dbQuery(
@@ -1377,6 +1598,7 @@ router.post("/maintenance/reopen-month", async (req, res) => {
     const { month, reason } = req.body || {};
     if (!month)  return res.status(400).json({ error: "month_required" });
     if (!reason) return res.status(400).json({ error: "reason_required" });
+    if (!isValidMonth(month)) return res.status(400).json({ error: "invalid_month", message: "month must be YYYY-MM." });
 
     const result = await dbQuery(
       `UPDATE monthly_closures
@@ -1450,11 +1672,11 @@ router.get("/maintenance/closure/:month/pdf", async (req, res) => {
 router.get("/maintenance/tally", async (req, res) => {
   try {
     const societyId = req.user.societyId;
-    const { year }  = req.query;
+    const year      = toYear(req.query.year);
 
     let monthFilter = "";
     const params = [societyId];
-    if (year && /^\d{4}$/.test(year)) {
+    if (year) {
       params.push(`${year}-%`);
       monthFilter = ` AND md.due_month LIKE $${params.length}`;
     }
@@ -1492,13 +1714,20 @@ router.get("/maintenance/tally", async (req, res) => {
     }
 
     // Merge — for open months, compute expenses live from expense sheet
+    const expenseParams = [societyId];
+    let expenseMonthFilter = "";
+    if (year) {
+      expenseParams.push(`${year}-%`);
+      expenseMonthFilter = ` AND month LIKE $${expenseParams.length}`;
+    }
+
     const expenseRes = await dbQuery(
       `SELECT month,
-              (SELECT COALESCE(SUM(val->>'total_amount'), 0)::NUMERIC
+              (SELECT COALESCE(SUM(NULLIF(val->>'total_amount', '')::NUMERIC), 0)
                FROM jsonb_array_elements(fixed_items || variable_items) AS val) AS total_expenses
        FROM maintenance_expense_sheets
-       WHERE society_id = $1${year ? ` AND month LIKE '${year}-%'` : ""}`,
-      [societyId],
+       WHERE society_id = $1${expenseMonthFilter}`,
+      expenseParams,
     );
     const expenseMap = {};
     (expenseRes?.rows || []).forEach((e) => { expenseMap[e.month] = Number(e.total_expenses || 0); });
@@ -1742,7 +1971,10 @@ router.post("/broadcast", async (req, res) => {
 router.post("/emergency-alert", async (req, res) => {
   try {
     const { societyId, id: sentByUserId } = req.user;
-    const { message, title = "Emergency Notice" } = req.body || {};
+    const { message } = req.body || {};
+    // Default on read, not on destructure — an explicit `title: null` skips a
+    // destructuring default and would blow up on .trim().
+    const title = (req.body?.title || "Emergency Notice").trim() || "Emergency Notice";
 
     if (!message?.trim()) return res.status(400).json({ error: "message_required" });
 
@@ -1763,7 +1995,7 @@ router.post("/emergency-alert", async (req, res) => {
       `INSERT INTO announcements (society_id, title, body, category, priority, pinned, created_by)
        VALUES ($1, $2, $3, 'EMERGENCY', 'URGENT', true, $4)
        RETURNING id`,
-      [societyId, title.trim(), message.trim(), sentByUserId],
+      [societyId, title, message.trim(), sentByUserId],
     );
     const announcementId = annResult?.rows?.[0]?.id || null;
 
@@ -1786,7 +2018,6 @@ router.post("/emergency-alert", async (req, res) => {
 router.get("/broadcasts", async (req, res) => {
   try {
     const { societyId } = req.user;
-    const { limit = 20 } = req.query;
     const result = await dbQuery(
       `SELECT id, message, target_type, target_meta, is_emergency,
               recipient_count, sent_count, created_at
@@ -1794,7 +2025,7 @@ router.get("/broadcasts", async (req, res) => {
        WHERE society_id = $1
        ORDER BY created_at DESC
        LIMIT $2`,
-      [societyId, Number(limit)],
+      [societyId, toLimit(req.query.limit, 20, 200)],
     );
     return res.json({ broadcasts: result?.rows || [] });
   } catch (err) {
@@ -1838,11 +2069,14 @@ router.post("/events", async (req, res) => {
     if (!title?.trim()) return res.status(400).json({ error: "title_required" });
     if (!event_date)    return res.status(400).json({ error: "event_date_required" });
 
+    const eventDate = new Date(event_date);
+    if (Number.isNaN(eventDate.getTime())) return res.status(400).json({ error: "invalid_event_date" });
+
     const result = await dbQuery(
       `INSERT INTO society_events (society_id, title, description, event_date, location)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [societyId, title.trim(), description?.trim() || null, new Date(event_date), location?.trim() || null],
+      [societyId, title.trim(), description?.trim() || null, eventDate, location?.trim() || null],
     );
     return res.status(201).json({ event: result.rows[0] });
   } catch (err) {
@@ -1858,6 +2092,11 @@ router.patch("/events/:id", async (req, res) => {
     const { societyId } = req.user;
     const { title, description, event_date, location } = req.body || {};
 
+    const eventDate = event_date ? new Date(event_date) : null;
+    if (eventDate && Number.isNaN(eventDate.getTime())) {
+      return res.status(400).json({ error: "invalid_event_date" });
+    }
+
     const result = await dbQuery(
       `UPDATE society_events
        SET title       = COALESCE($1, title),
@@ -1868,7 +2107,7 @@ router.patch("/events/:id", async (req, res) => {
        WHERE id = $5 AND society_id = $6
        RETURNING *`,
       [title?.trim() || null, description?.trim() || null,
-       event_date ? new Date(event_date) : null,
+       eventDate,
        location?.trim() || null,
        req.params.id, societyId],
     );
@@ -1963,11 +2202,16 @@ router.post("/polls", async (req, res) => {
     const cleanOptions = options.map((o) => String(o).trim()).filter(Boolean);
     if (cleanOptions.length < 2) return res.status(400).json({ error: "at_least_two_options_required" });
 
+    const closesAt = closes_at ? new Date(closes_at) : null;
+    if (closesAt && Number.isNaN(closesAt.getTime())) {
+      return res.status(400).json({ error: "invalid_closes_at" });
+    }
+
     const result = await dbQuery(
       `INSERT INTO polls (society_id, question, options, closes_at)
        VALUES ($1, $2, $3::jsonb, $4)
        RETURNING *`,
-      [societyId, question.trim(), JSON.stringify(cleanOptions), closes_at ? new Date(closes_at) : null],
+      [societyId, question.trim(), JSON.stringify(cleanOptions), closesAt],
     );
     return res.status(201).json({ poll: result.rows[0] });
   } catch (err) {
@@ -2005,8 +2249,7 @@ router.delete("/polls/:id", async (req, res) => {
 router.get("/expenses/summary", async (req, res) => {
   try {
     const { societyId } = req.user;
-    // Default to current month
-    const month = req.query.month || new Date().toISOString().slice(0, 7); // YYYY-MM
+    const month = toMonth(req.query.month); // YYYY-MM
 
     const [maintenanceRes, otherIncomeRes, expensesRes, otherIncomeCatRes] =
       await Promise.all([
@@ -2084,7 +2327,9 @@ router.get("/expenses/summary", async (req, res) => {
 router.get("/expenses/annual", async (req, res) => {
   try {
     const { societyId } = req.user;
-    const year = req.query.year || new Date().getFullYear().toString();
+    // EXTRACT(YEAR …) is numeric — an unvalidated 'abc' here reaches Postgres
+    // as a numeric literal and errors out.
+    const year = toYear(req.query.year) || new Date().getFullYear().toString();
 
     const [maintenanceRows, otherIncomeRows, expenseRows] = await Promise.all([
       dbQuery(
@@ -2148,7 +2393,7 @@ router.get("/expenses/annual", async (req, res) => {
 router.get("/expenses", async (req, res) => {
   try {
     const { societyId } = req.user;
-    const { month, category, expense_type, fund_source, limit = 200 } = req.query;
+    const { month, category, expense_type, fund_source } = req.query;
 
     const conditions = ["e.society_id = $1"];
     const params     = [societyId];
@@ -2159,7 +2404,7 @@ router.get("/expenses", async (req, res) => {
     if (expense_type) { conditions.push(`e.expense_type = $${p++}`);             params.push(expense_type); }
     if (fund_source)  { conditions.push(`e.fund_source = $${p++}`);              params.push(fund_source); }
 
-    params.push(Math.min(Number(limit), 500));
+    params.push(toLimit(req.query.limit, 200, 500));
 
     const result = await dbQuery(
       `SELECT e.*,
@@ -2286,14 +2531,14 @@ router.delete("/expenses/:id", async (req, res) => {
 router.get("/other-income", async (req, res) => {
   try {
     const { societyId } = req.user;
-    const { month, limit = 200 } = req.query;
+    const { month } = req.query;
 
     const conditions = ["i.society_id = $1"];
     const params     = [societyId];
     let p = 2;
 
     if (month) { conditions.push(`TO_CHAR(i.date, 'YYYY-MM') = $${p++}`); params.push(month); }
-    params.push(Math.min(Number(limit), 500));
+    params.push(toLimit(req.query.limit, 200, 500));
 
     const result = await dbQuery(
       `SELECT i.*, a.username AS created_by_name

@@ -979,35 +979,6 @@ export function SecretaryExpenses() {
         subtitle="Expense ledger, other income, and I&E statement"
       />
 
-      {/* Explainer tip */}
-      <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "16px 20px", marginBottom: 24, display: "flex", gap: 14 }}>
-        <div style={{ fontSize: 22, flexShrink: 0 }}>💡</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#1e40af" }}>
-            Maintenance vs Finances — what's the difference?
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div style={{ background: "#fff", borderRadius: 8, padding: "10px 14px", border: "1px solid #bfdbfe" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#1d4ed8", marginBottom: 4 }}>🏠 Maintenance module</div>
-              <div style={{ fontSize: 12, color: "#334155", lineHeight: 1.6 }}>
-                Tracks money <strong>coming in from residents</strong> — monthly dues, who has paid, who is overdue. One entry per flat per month.
-              </div>
-            </div>
-            <div style={{ background: "#fff", borderRadius: 8, padding: "10px 14px", border: "1px solid #bfdbfe" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#1d4ed8", marginBottom: 4 }}>📒 Finances (this page)</div>
-              <div style={{ fontSize: 12, color: "#334155", lineHeight: 1.6 }}>
-                Tracks money <strong>going out</strong> — salaries, electricity, repairs, AMC, insurance. Also records extra income like parking fees and hall bookings.
-              </div>
-            </div>
-          </div>
-          <div style={{ fontSize: 12, color: "#3b82f6", lineHeight: 1.6 }}>
-            The <strong>I&amp;E Summary</strong> (Income &amp; Expenditure) combines both: dues collected + other income − all expenses = <strong>Net Surplus or Deficit</strong> for the month.
-            Dues paid by residents are pulled in automatically — you only need to enter expenses and other income here.
-            Use the <em>Annual Report</em> tab to export a CSV for your CA/auditor.
-          </div>
-        </div>
-      </div>
-
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
 
       {tab === "overview" && <OverviewTab />}

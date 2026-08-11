@@ -64,6 +64,36 @@ export async function ensureSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
 
+    // Vendor side tables — read by the vendor detail / suspension endpoints in
+    // routes/vendor.js, so they have to exist on a boot-provisioned DB too.
+    await db.query(`CREATE TABLE IF NOT EXISTS vendor_suspensions (
+      id           SERIAL PRIMARY KEY,
+      vendor_id    INTEGER REFERENCES vendors(id) ON DELETE CASCADE,
+      reason       TEXT,
+      suspended_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      suspended_at TIMESTAMPTZ DEFAULT NOW(),
+      restored_at  TIMESTAMPTZ
+    )`);
+
+    await db.query(`CREATE TABLE IF NOT EXISTS vendor_documents (
+      id          SERIAL PRIMARY KEY,
+      vendor_id   INTEGER REFERENCES vendors(id) ON DELETE CASCADE,
+      doc_type    TEXT,
+      filename    TEXT,
+      url         TEXT,
+      metadata    JSONB,
+      uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      uploaded_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+
+    await db.query(`CREATE TABLE IF NOT EXISTS vendor_service_areas (
+      id          SERIAL PRIMARY KEY,
+      vendor_id   INTEGER REFERENCES vendors(id) ON DELETE CASCADE,
+      building_id INTEGER REFERENCES societies(id) ON DELETE CASCADE,
+      region      TEXT,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    )`);
+
     await db.query(`CREATE TABLE IF NOT EXISTS tickets (
       id SERIAL PRIMARY KEY,
       ticket_id TEXT UNIQUE,
@@ -193,6 +223,9 @@ export async function ensureSchema() {
     await db.query(`ALTER TABLE residents ADD COLUMN IF NOT EXISTS preferred_contact TEXT DEFAULT 'WHATSAPP'`);
     await db.query(`ALTER TABLE residents ADD COLUMN IF NOT EXISTS bhk TEXT`);
     await db.query(`ALTER TABLE residents ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`);
+    // Profile extensions read/written by the resident portal (routes/resident.js)
+    await db.query(`ALTER TABLE residents ADD COLUMN IF NOT EXISTS vehicles          JSONB DEFAULT '[]'`);
+    await db.query(`ALTER TABLE residents ADD COLUMN IF NOT EXISTS emergency_contact JSONB`);
 
     // ── Auth accounts (web-portal login) ─────────────────────────────────────
     await db.query(`CREATE TABLE IF NOT EXISTS auth_accounts (
@@ -223,6 +256,8 @@ export async function ensureSchema() {
       END$$;
     `);
     await db.query(`ALTER TABLE auth_accounts ADD COLUMN IF NOT EXISTS resident_id INTEGER REFERENCES residents(id) ON DELETE CASCADE`);
+    // Gates the one-time resident profile setup screen (routes/auth.js OTP verify)
+    await db.query(`ALTER TABLE auth_accounts ADD COLUMN IF NOT EXISTS force_profile_setup BOOLEAN DEFAULT TRUE`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_auth_accounts_resident ON auth_accounts (resident_id)`);
 
     // ── Vendors — verification columns (added after initial create) ───────────
@@ -257,6 +292,8 @@ export async function ensureSchema() {
     // ── Societies — maintenance feature columns ───────────────────────────────
     await db.query(`ALTER TABLE societies ADD COLUMN IF NOT EXISTS maintenance_enabled BOOLEAN DEFAULT FALSE`);
     await db.query(`ALTER TABLE societies ADD COLUMN IF NOT EXISTS maintenance_upi_id TEXT`);
+    // Payee name shown inside the resident's UPI app when paying via intent link
+    await db.query(`ALTER TABLE societies ADD COLUMN IF NOT EXISTS maintenance_payee_name TEXT`);
 
     // ── Maintenance settings (per-unit recurring amount + day) ───────────────
     await db.query(`CREATE TABLE IF NOT EXISTS maintenance_settings (
@@ -266,6 +303,7 @@ export async function ensureSchema() {
       enabled    BOOLEAN DEFAULT FALSE,
       amount     NUMERIC,
       due_day    INTEGER,
+      bill_recipient TEXT DEFAULT 'OWNER',
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
@@ -282,6 +320,16 @@ export async function ensureSchema() {
       EXCEPTION WHEN duplicate_object THEN NULL;
       END $$;
     `);
+
+    // Migrate existing DBs: bill_recipient shipped after the table did, so a DB
+    // provisioned by an earlier boot has the table but not the column — and the
+    // CREATE above is a no-op on it. Without this, every query that selects
+    // ms.bill_recipient (secretary residents list, bill generation) errors out.
+    await db.query(`ALTER TABLE maintenance_settings ADD COLUMN IF NOT EXISTS bill_recipient TEXT DEFAULT 'OWNER'`);
+    await db.query(`UPDATE maintenance_settings SET bill_recipient = 'OWNER' WHERE bill_recipient IS NULL`);
+    await db.query(`ALTER TABLE maintenance_settings DROP CONSTRAINT IF EXISTS maintenance_settings_bill_recipient_check`);
+    await db.query(`ALTER TABLE maintenance_settings ADD CONSTRAINT maintenance_settings_bill_recipient_check
+                      CHECK (bill_recipient IN ('OWNER', 'TENANT'))`);
 
     // ── Maintenance dues (one row per resident per month) ─────────────────────
     await db.query(`CREATE TABLE IF NOT EXISTS maintenance_dues (
@@ -325,6 +373,29 @@ export async function ensureSchema() {
     await db.query(`ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS previously_due      NUMERIC(10,2) DEFAULT 0`);
     await db.query(`ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS interest_amount     NUMERIC(10,2) DEFAULT 0`);
     await db.query(`ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS overdue_notified_at TIMESTAMPTZ`);
+
+    // ── Self-serve UPI payment flow ───────────────────────────────────────────
+    // pay_token backs the public /pay/:token page sent to residents over
+    // WhatsApp/email. The resident pays via a UPI intent link, self-declares the
+    // UTR, and the secretary verifies it — see services/upiService.js.
+    await db.query(`ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS pay_token   TEXT`);
+    await db.query(`ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS payment_mode TEXT`);
+    await db.query(`ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS claimed_utr TEXT`);
+    await db.query(`ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS claimed_at  TIMESTAMPTZ`);
+    await db.query(`ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS verified_by INTEGER REFERENCES auth_accounts(id) ON DELETE SET NULL`);
+    await db.query(`ALTER TABLE maintenance_dues ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ`);
+    await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_maintenance_dues_pay_token
+                      ON maintenance_dues (pay_token) WHERE pay_token IS NOT NULL`);
+
+    // Widen the status CHECK to allow PENDING_VERIFICATION (resident has claimed
+    // payment, secretary has not confirmed the UTR yet).
+    await db.query(`
+      DO $$ BEGIN
+        ALTER TABLE maintenance_dues DROP CONSTRAINT IF EXISTS maintenance_dues_status_check;
+        ALTER TABLE maintenance_dues ADD CONSTRAINT maintenance_dues_status_check
+          CHECK (status IN ('PENDING','PENDING_VERIFICATION','PAID','OVERDUE','WAIVED'));
+      EXCEPTION WHEN others THEN NULL; END $$;
+    `);
 
     // Ticket: unit reference + escalation tracking
     await db.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS unit_id      INTEGER REFERENCES units(id) ON DELETE SET NULL`);
@@ -497,6 +568,25 @@ export async function ensureSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (poll_id, resident_id)
     )`);
+
+    // event_rsvps.society_id and poll_votes.society_id shipped without an
+    // ON DELETE action, unlike the 21 other tables that reference societies.
+    // NO ACTION means a society with any RSVP or vote cannot be deleted at all
+    // (FK violation 23503), which blocks removing a test society before go-live.
+    await db.query(`
+      DO $$ BEGIN
+        ALTER TABLE event_rsvps DROP CONSTRAINT IF EXISTS event_rsvps_society_id_fkey;
+        ALTER TABLE event_rsvps ADD CONSTRAINT event_rsvps_society_id_fkey
+          FOREIGN KEY (society_id) REFERENCES societies(id) ON DELETE CASCADE;
+      EXCEPTION WHEN others THEN NULL; END $$;
+    `);
+    await db.query(`
+      DO $$ BEGIN
+        ALTER TABLE poll_votes DROP CONSTRAINT IF EXISTS poll_votes_society_id_fkey;
+        ALTER TABLE poll_votes ADD CONSTRAINT poll_votes_society_id_fkey
+          FOREIGN KEY (society_id) REFERENCES societies(id) ON DELETE CASCADE;
+      EXCEPTION WHEN others THEN NULL; END $$;
+    `);
 
     // ── Society Expenses (SEC-104) ────────────────────────────────────────────
     await db.query(`CREATE TABLE IF NOT EXISTS society_expenses (

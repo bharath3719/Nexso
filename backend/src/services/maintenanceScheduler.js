@@ -18,14 +18,9 @@ import { dbQuery } from "../db/index.js";
 import { sendWhatsAppText, sendWhatsAppDocument } from "./notifications.js";
 import { saveBillAndGetUrl } from "./billPdf.js";
 import { sendMaintenanceReminderEmail, isEmailConfigured } from "./email.js";
-import { createPaymentLink, isRazorpayConfigured } from "./razorpayService.js";
+import { createDuePaymentLink } from "./paymentLinks.js";
 import { log } from "../utils/logger.js";
-
-// ── Helper: current YYYY-MM ────────────────────────────────────────────────────
-
-function currentMonth() {
-  return new Date().toISOString().slice(0, 7);
-}
+import { currentMonth, dueDateFor } from "../utils/params.js";
 
 // ── Generate dues for all enabled societies ────────────────────────────────────
 //
@@ -35,12 +30,10 @@ function currentMonth() {
 async function generateDuesForAllSocieties(month) {
   log(`[Maintenance] Auto-generating dues for ${month}…`);
 
-  const [year, mon] = month.split("-").map(Number);
-
   try {
     // Fetch all societies with maintenance turned on
     const societies = await dbQuery(
-      `SELECT id, name FROM societies WHERE maintenance_enabled = TRUE`,
+      `SELECT id, name, maintenance_upi_id FROM societies WHERE maintenance_enabled = TRUE`,
     );
 
     let totalCreated = 0;
@@ -67,8 +60,7 @@ async function generateDuesForAllSocieties(month) {
         const occupant = occupantRes?.rows?.[0];
         if (!occupant) { totalSkipped++; continue; }
 
-        const dueDate    = new Date(Date.UTC(year, mon - 1, s.due_day));
-        const dueDateStr = dueDate.toISOString().slice(0, 10);
+        const dueDateStr = dueDateFor(month, s.due_day);
 
         const r = await dbQuery(
           `INSERT INTO maintenance_dues
@@ -84,25 +76,18 @@ async function generateDuesForAllSocieties(month) {
         const dueId = r.rows[0].id;
         totalCreated++;
 
-        // Create Razorpay payment link for each new due
-        if (isRazorpayConfigured()) {
-          const link = await createPaymentLink({
-            dueId, societyId: soc.id, residentId: occupant.id,
-            residentName:  occupant.name  || "Resident",
-            residentEmail: occupant.email || null,
-            residentPhone: occupant.phone || null,
-            amount:     s.amount,
-            dueMonth:   month,
-            dueDate:    dueDateStr,
-            societyName: soc.name,
-          });
-          if (link) {
-            await dbQuery(
-              `UPDATE maintenance_dues SET razorpay_payment_link_id = $1, payment_link = $2 WHERE id = $3`,
-              [link.id, link.short_url, dueId],
-            );
-          }
-        }
+        // Mint a payment link (Razorpay or UPI) — persisted by the service
+        await createDuePaymentLink({
+          dueId, societyId: soc.id, residentId: occupant.id,
+          residentName:  occupant.name  || "Resident",
+          residentEmail: occupant.email || null,
+          residentPhone: occupant.phone || null,
+          amount:     s.amount,
+          dueMonth:   month,
+          dueDate:    dueDateStr,
+          societyName:  soc.name,
+          societyUpiId: soc.maintenance_upi_id,
+        });
       }
 
       log(`[Maintenance] ${soc.name}: generated dues (created: ${totalCreated}, skipped: ${totalSkipped})`);
