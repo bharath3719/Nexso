@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { DefaultButton, Icon, PrimaryButton, Spinner, TextField, Toggle } from "@fluentui/react";
+import { DefaultButton, Icon, PrimaryButton, Spinner, Toggle } from "@fluentui/react";
 import { formatDateShort as fmtDate } from "../../utils/formatDate.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -390,7 +390,13 @@ export async function updateDue({ updateFn, id, payload, setDues, setStats, show
   }
 }
 
-export function MaintenanceConfigBar({ enabled, isOff, offText, onText, savingCfg, upiEdit, onToggle, onUpiChange, onSaveUpi }) {
+/**
+ * The UPI ID is one-time setup, not a per-visit control, so this bar only
+ * *reports* it — editing happens in UpiSetupModal, behind `onEditUpi`. An
+ * always-editable text box next to a Save button invited exactly the accidental
+ * blank saves this replaces.
+ */
+export function MaintenanceConfigBar({ enabled, isOff, offText, onText, savingCfg, upiId, onToggle, onEditUpi }) {
   return (
     <div className="maint-config-bar">
       <div className="maint-config-bar__inner">
@@ -407,20 +413,40 @@ export function MaintenanceConfigBar({ enabled, isOff, offText, onText, savingCf
           styles={{ root: { margin: 0 }, label: { display: "none" } }}
         />
       </div>
-      <div className="maint-config-bar__upi">
-        <TextField
-          placeholder="UPI ID (e.g. society@upi)"
-          value={upiEdit}
-          onChange={(_, v) => onUpiChange(v || "")}
-          styles={{ root: { width: 220 }, fieldGroup: { height: 32 } }}
-        />
-        <DefaultButton
-          text="Save UPI"
-          onClick={onSaveUpi}
-          disabled={savingCfg}
-          styles={{ root: { height: 32, fontSize: 12 } }}
-        />
-      </div>
+      {onEditUpi && (
+        <div className="maint-config-bar__upi">
+          {upiId ? (
+            <>
+              <Icon iconName="PaymentCard" style={{ fontSize: 13, color: "#64748b" }} />
+              <span style={{ fontSize: 12, color: "#64748b" }}>
+                Collecting to{" "}
+                <strong style={{ color: "#334155", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                  {upiId}
+                </strong>
+              </span>
+              <DefaultButton
+                text="Change"
+                onClick={onEditUpi}
+                disabled={savingCfg}
+                styles={{ root: { height: 28, fontSize: 12, minWidth: 0, padding: "0 10px" } }}
+              />
+            </>
+          ) : (
+            <>
+              <Icon iconName="Warning" style={{ fontSize: 13, color: "#b45309" }} />
+              <span style={{ fontSize: 12, color: "#b45309" }}>
+                No UPI ID set — residents can't pay online
+              </span>
+              <PrimaryButton
+                text="Set up"
+                onClick={onEditUpi}
+                disabled={savingCfg}
+                styles={{ root: { height: 28, fontSize: 12, minWidth: 0, padding: "0 10px" } }}
+              />
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

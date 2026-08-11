@@ -22,6 +22,7 @@ import {
   useShowToast, ErrorBanner, MonthInput, StatusFilterSelect, MaintenanceConfigBar,
   GenerateDuesButtons, updateDue,
 } from "../../components/maintenance/MaintenanceShared.jsx";
+import { UpiSetupModal } from "../../components/maintenance/UpiSetupModal.jsx";
 import "../../styles/Maintenance.css";
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -37,7 +38,7 @@ export function MaintenancePage() {
   const [loadingSoc, setLoadingSoc] = useState(true);
   const [error,     setError]       = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [upiEdit,   setUpiEdit]     = useState("");
+  const [showUpi,   setShowUpi]     = useState(false);
   const [savingCfg, setSavingCfg]   = useState(false);
   const [generating, setGenerating] = useState(false);
   const [reminding,  setReminding]  = useState(false);
@@ -85,10 +86,7 @@ export function MaintenancePage() {
     if (!sid) return;
     try {
       const data = await api.maintenance.getSociety(sid);
-      if (data.society) {
-        setSocConfig(data.society);
-        setUpiEdit(data.society.maintenance_upi_id || "");
-      }
+      if (data.society) setSocConfig(data.society);
     } catch { /* ignore */ }
   }, [societyId]);
 
@@ -137,15 +135,16 @@ export function MaintenancePage() {
 
   // ── Save UPI ID ────────────────────────────────────────────────────────────
 
-  const saveUpi = async () => {
+  const saveUpi = async (payload) => {
     if (!societyId) return;
     setSavingCfg(true);
     try {
-      const data = await api.maintenance.patchSociety(societyId, { maintenance_upi_id: upiEdit.trim() || null });
-      setSocConfig((c) => ({ ...c, maintenance_upi_id: data.society.maintenance_upi_id }));
-      showToast("UPI ID saved.");
-    } catch {
-      showToast("Failed to save UPI ID.");
+      const data = await api.maintenance.patchSociety(societyId, payload);
+      setSocConfig((c) => ({ ...c, ...data.society }));
+      setShowUpi(false);
+      showToast(payload.maintenance_upi_id ? "UPI ID saved ✓" : "UPI ID removed.");
+    } catch (err) {
+      showToast(err?.data?.message || "Failed to save UPI ID.");
     } finally {
       setSavingCfg(false);
     }
@@ -232,10 +231,9 @@ export function MaintenancePage() {
             offText="Currently OFF for this society."
             onText="Currently ON — residents will be reminded and dues tracked."
             savingCfg={savingCfg}
-            upiEdit={upiEdit}
+            upiId={socConfig.maintenance_upi_id}
             onToggle={toggleFeature}
-            onUpiChange={setUpiEdit}
-            onSaveUpi={saveUpi}
+            onEditUpi={() => setShowUpi(true)}
           />
 
           {/* ── Controls ─────────────────────────────────────────────── */}
@@ -265,6 +263,17 @@ export function MaintenancePage() {
             onUpdate={handleUpdate}
           />
         </>
+      )}
+
+      {showUpi && (
+        <UpiSetupModal
+          currentUpiId={socConfig.maintenance_upi_id || ""}
+          societyName={socConfig.name || ""}
+          allowPayeeName={false}
+          saving={savingCfg}
+          onSave={saveUpi}
+          onClose={() => setShowUpi(false)}
+        />
       )}
 
       <Toast msg={toast} />

@@ -1,6 +1,7 @@
 import React from "react";
 import nexsoLogo from "../../assets/logo.png";
 import { useShellState, ShellSidebar, SignOutButton } from "./LayoutShared.jsx";
+import { GuideLauncher } from "../guide/GuideLauncher.jsx";
 import { RouteErrorBoundary } from "../shared/ErrorBoundary.jsx";
 import { api } from "../../services/api.js";
 import "../../styles/Layout.css";
@@ -29,11 +30,10 @@ export function Layout({ navLinks, children, onLogout }) {
           <div className="layout-logo" onClick={() => navigate("/")}>
             <img src={nexsoLogo} alt="Nexso" className="layout-logo-img" />
           </div>
-          {onLogout && (
-            <div style={{ marginLeft: "auto", paddingRight: 8 }}>
-              <SignOutButton onLogout={onLogout} />
-            </div>
-          )}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", paddingRight: 8, gap: 8 }}>
+            <GuideLauncher role="NEXSO_ADMIN" />
+            <SignOutButton onLogout={onLogout} />
+          </div>
         </div>
       </header>
 

@@ -553,6 +553,7 @@
   transition: background 150ms, color 150ms;
 }
 .maint-modal-close:hover { background: #f1f5f9; color: #1e293b; }
+.maint-modal-close:disabled { opacity: 0.4; cursor: not-allowed; background: none; }
 
 .maint-modal-body {
   padding: 20px 22px;

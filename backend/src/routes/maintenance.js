@@ -21,6 +21,7 @@ import { sendWhatsAppText, sendWhatsAppDocument } from "../services/notification
 import { saveBillAndGetUrl } from "../services/billPdf.js";
 import { sendMaintenanceReminderEmail, isEmailConfigured } from "../services/email.js";
 import { createDuePaymentLink, activeProvider, isPaymentConfigured } from "../services/paymentLinks.js";
+import { isValidVpa } from "../services/upiService.js";
 import { toMonth, isValidMonth, dueDateFor } from "../utils/params.js";
 
 const router = express.Router();
@@ -380,20 +381,37 @@ router.get("/society/:id", async (req, res) => {
 
 // ── PATCH /api/maintenance/society/:id ────────────────────────────────────────
 
+// Same field semantics as PATCH /api/secretary/maintenance/config: omitted keeps,
+// `""` clears, anything else must be a well-formed VPA.
+
 router.patch("/society/:id", async (req, res) => {
   try {
     const { maintenance_enabled, maintenance_upi_id } = req.body || {};
+
+    const sets   = [];
+    const params = [];
+    const set = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+
+    if (maintenance_enabled != null) set("maintenance_enabled", !!maintenance_enabled);
+
+    if (maintenance_upi_id != null) {
+      const vpa = String(maintenance_upi_id).trim();
+      if (vpa && !isValidVpa(vpa)) {
+        return res.status(400).json({ error: "invalid_upi_id", message: "UPI ID must look like name@bank" });
+      }
+      set("maintenance_upi_id", vpa || null);
+    }
+
+    if (!sets.length) {
+      return res.status(400).json({ error: "no_changes", message: "Nothing to update." });
+    }
+
+    params.push(req.params.id);
     const result = await dbQuery(
-      `UPDATE societies SET
-         maintenance_enabled = COALESCE($1, maintenance_enabled),
-         maintenance_upi_id  = COALESCE($2, maintenance_upi_id)
-       WHERE id = $3
+      `UPDATE societies SET ${sets.join(", ")}
+       WHERE id = $${params.length}
        RETURNING id, name, maintenance_enabled, maintenance_upi_id`,
-      [
-        maintenance_enabled != null ? !!maintenance_enabled : null,
-        maintenance_upi_id  != null ? maintenance_upi_id    : null,
-        req.params.id,
-      ],
+      params,
     );
     if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
     return res.json({ society: result.rows[0] });

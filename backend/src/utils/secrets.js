@@ -17,6 +17,22 @@ export function jwtSecret() {
 }
 
 /**
+ * Key for the HMAC that names bill PDF files (see services/billPdf.js).
+ *
+ * Deliberately separate from jwtSecret(). Bill URLs are long-lived — they go to
+ * residents over WhatsApp and stay in their chat history for months — whereas
+ * JWT_SECRET is a credential you may need to rotate at short notice. Deriving
+ * filenames from the JWT secret meant any rotation silently renamed every bill
+ * and 404'd every link already sent.
+ *
+ * Falls back to the JWT secret so deploys that never set this keep resolving
+ * the URLs they have already issued.
+ */
+export function billUrlSecret() {
+  return process.env.BILL_URL_SECRET || jwtSecret();
+}
+
+/**
  * Throws when a production deploy is missing hard security requirements.
  *
  * The hard failure is gated on NODE_ENV=production, but the dev-key warning

@@ -12,6 +12,7 @@ import { isDbConnected } from "./db/index.js";
 import { activeProvider, isPaymentConfigured } from "./services/paymentLinks.js";
 import { startMaintenanceScheduler } from "./services/maintenanceScheduler.js";
 import { startTicketEscalationScheduler } from "./services/ticketEscalationScheduler.js";
+import { BILLS_DIR } from "./services/billPdf.js";
 
 import webhookRouter    from "./routes/webhook.js";
 import vendorRouter     from "./routes/vendor.js";
@@ -118,7 +119,7 @@ app.use(morgan("dev"));
 // Serve generated maintenance bill PDFs. These URLs go to residents over
 // WhatsApp, so they can't sit behind a login — the filename is an unguessable
 // HMAC instead (see billPdf.js). Restrict to .pdf and never list the directory.
-app.use("/bills", express.static(path.join(__dirname, "..", "bills"), {
+app.use("/bills", express.static(BILLS_DIR, {
   index: false,
   dotfiles: "deny",
   extensions: false,

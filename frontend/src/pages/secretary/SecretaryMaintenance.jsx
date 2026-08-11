@@ -7,6 +7,7 @@ import {
   useShowToast, ErrorBanner, MonthInput, StatusFilterSelect, MaintenanceConfigBar,
   GenerateDuesButtons, updateDue, computeUpdatedStats,
 } from "../../components/maintenance/MaintenanceShared.jsx";
+import { UpiSetupModal } from "../../components/maintenance/UpiSetupModal.jsx";
 import { ExpenseSheetTab } from "../../components/maintenance/ExpenseSheetTab.jsx";
 import { AccountTallyTab } from "../../components/maintenance/AccountTallyTab.jsx";
 import { formatMonth } from "../../utils/formatDate.js";
@@ -132,11 +133,11 @@ export function SecretaryMaintenance() {
   const [month,        setMonth]        = useState(currentMonth());
   const [dues,         setDues]         = useState([]);
   const [stats,        setStats]        = useState(null);
-  const [config,       setConfig]       = useState({ maintenance_enabled: true, maintenance_upi_id: "" });
+  const [config,       setConfig]       = useState({ maintenance_enabled: true, maintenance_upi_id: "", maintenance_payee_name: "" });
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [upiEdit,      setUpiEdit]      = useState("");
+  const [showUpi,      setShowUpi]      = useState(false);
   const [savingCfg,    setSavingCfg]    = useState(false);
   const [generating,   setGenerating]   = useState(false);
   const [reminding,    setReminding]    = useState(false);
@@ -163,10 +164,7 @@ export function SecretaryMaintenance() {
       setDues(data.dues   || []);
       setStats(data.stats || null);
       setClosure(closureData);
-      if (data.config) {
-        setConfig(data.config);
-        setUpiEdit(data.config.maintenance_upi_id || "");
-      }
+      if (data.config) setConfig(data.config);
     } catch {
       setError("Failed to load maintenance data.");
     } finally {
@@ -192,14 +190,15 @@ export function SecretaryMaintenance() {
     }
   };
 
-  const saveUpi = async () => {
+  const saveUpi = async (payload) => {
     setSavingCfg(true);
     try {
-      const data = await api.secretary.maintenance.updateConfig({ maintenance_upi_id: upiEdit.trim() || null });
-      setConfig((c) => ({ ...c, maintenance_upi_id: data.config.maintenance_upi_id }));
-      showToast("UPI ID saved.");
-    } catch {
-      showToast("Failed to save UPI ID.");
+      const data = await api.secretary.maintenance.updateConfig(payload);
+      setConfig((c) => ({ ...c, ...data.config }));
+      setShowUpi(false);
+      showToast(payload.maintenance_upi_id ? "UPI ID saved ✓" : "UPI ID removed.");
+    } catch (err) {
+      showToast(err?.data?.message || "Failed to save UPI ID.");
     } finally {
       setSavingCfg(false);
     }
@@ -335,10 +334,9 @@ export function SecretaryMaintenance() {
         offText="Currently OFF — residents will not receive reminders."
         onText="Currently ON — dues will be generated and reminders sent automatically."
         savingCfg={savingCfg}
-        upiEdit={upiEdit}
+        upiId={config.maintenance_upi_id}
         onToggle={toggleFeature}
-        onUpiChange={setUpiEdit}
-        onSaveUpi={saveUpi}
+        onEditUpi={() => setShowUpi(true)}
       />
 
       <div className="maint-tabs">
@@ -443,6 +441,15 @@ export function SecretaryMaintenance() {
       {showReopen && (
         <ReopenMonthModal month={month} onClose={() => setShowReopen(false)}
           onConfirm={handleReopenMonth} reopening={reopening} />
+      )}
+      {showUpi && (
+        <UpiSetupModal
+          currentUpiId={config.maintenance_upi_id || ""}
+          currentPayeeName={config.maintenance_payee_name || ""}
+          saving={savingCfg}
+          onSave={saveUpi}
+          onClose={() => setShowUpi(false)}
+        />
       )}
 
       <Toast msg={toast} />

@@ -5,10 +5,22 @@ import { fileURLToPath } from "url";
 import PDFDocument from "pdfkit";
 import { dbQuery } from "../db/index.js";
 import { previousMonth, isValidMonth } from "../utils/params.js";
-import { jwtSecret } from "../utils/secrets.js";
+import { billUrlSecret } from "../utils/secrets.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const BILLS_DIR = path.join(__dirname, "..", "..", "bills");
+
+/**
+ * Where generated bill PDFs live. Exported so server.js serves /bills from the
+ * same directory this writes to — two independently-built paths drift.
+ *
+ * These files must outlive the container. On Render (and any host with an
+ * ephemeral filesystem) the default in-repo path is wiped on every deploy,
+ * restart and instance move, which 404s every bill link already delivered to a
+ * resident. Set BILLS_DIR to a mounted persistent disk there.
+ */
+export const BILLS_DIR = process.env.BILLS_DIR
+  ? path.resolve(process.env.BILLS_DIR)
+  : path.join(__dirname, "..", "..", "bills");
 
 fs.mkdirSync(BILLS_DIR, { recursive: true });
 
@@ -593,7 +605,7 @@ export function generateClosurePdf(closure, expenseSheet, society) {
  */
 function billFilename(societyId, residentId, month) {
   const digest = crypto
-    .createHmac("sha256", jwtSecret())
+    .createHmac("sha256", billUrlSecret())
     .update(`bill:${societyId}:${residentId}:${month}`)
     .digest("hex")
     .slice(0, 32);

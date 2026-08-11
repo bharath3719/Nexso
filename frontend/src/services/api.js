@@ -311,7 +311,9 @@ export const api = {
       generate: (month) => post('/api/secretary/maintenance/generate', month ? { month } : {}),
       /** Send WhatsApp reminders to unpaid residents */
       sendReminders: (month) => post('/api/secretary/maintenance/send-reminders', month ? { month } : {}),
-      /** Toggle feature on/off + set UPI ID */
+      /** Payment settings (UPI ID, payee name, collection on/off) without loading dues */
+      getConfig: () => get('/api/secretary/maintenance/config'),
+      /** Toggle feature on/off + set UPI ID. Omit a field to keep it, pass '' to clear it. */
       updateConfig: (data) => patch('/api/secretary/maintenance/config', data),
       /** Get saved expense sheet for a month (or default empty template) */
       getExpenseSheet: (month) => get(`/api/secretary/maintenance/expense-sheet${month ? `?month=${month}` : ''}`),

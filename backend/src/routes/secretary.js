@@ -599,7 +599,7 @@ router.get("/maintenance", async (req, res) => {
 
     // Also fetch society maintenance config
     const socRes = await dbQuery(
-      `SELECT maintenance_enabled, maintenance_upi_id FROM societies WHERE id = $1`,
+      `SELECT maintenance_enabled, maintenance_upi_id, maintenance_payee_name FROM societies WHERE id = $1`,
       [societyId],
     );
     const soc = socRes?.rows?.[0] || {};
@@ -1256,31 +1256,69 @@ router.get("/maintenance/bill-preview", async (req, res) => {
   }
 });
 
+// ── GET /api/secretary/maintenance/config ─────────────────────────────────────
+// Payment settings on their own, so the settings screen doesn't have to pull a
+// whole month of dues just to show the UPI ID.
+
+router.get("/maintenance/config", async (req, res) => {
+  try {
+    const result = await dbQuery(
+      `SELECT id, name, maintenance_enabled, maintenance_upi_id, maintenance_payee_name
+         FROM societies WHERE id = $1`,
+      [req.user.societyId],
+    );
+    if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
+    return res.json({ config: result.rows[0] });
+  } catch (err) {
+    console.error("Secretary maintenance config get error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
 // ── PATCH /api/secretary/maintenance/config ───────────────────────────────────
 // Toggle feature on/off + update UPI ID for the society.
+//
+// Each field is optional: omitted (or null) leaves the column alone, `""` clears
+// it, anything else overwrites. The old COALESCE form could not express "clear",
+// so a blank UPI ID was silently discarded while the caller was told it saved.
 
 router.patch("/maintenance/config", async (req, res) => {
   try {
     const societyId = req.user.societyId;
     const { maintenance_enabled, maintenance_upi_id, maintenance_payee_name } = req.body || {};
 
-    if (maintenance_upi_id != null && maintenance_upi_id !== "" && !isValidVpa(maintenance_upi_id)) {
-      return res.status(400).json({ error: "invalid_upi_id", message: "UPI ID must look like name@bank" });
+    const sets   = [];
+    const params = [];
+    const set = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+
+    if (maintenance_enabled != null) set("maintenance_enabled", !!maintenance_enabled);
+
+    if (maintenance_upi_id != null) {
+      // A typo here routes every resident's payment to the wrong account, so a
+      // malformed VPA is rejected outright rather than stored and discovered later.
+      const vpa = String(maintenance_upi_id).trim();
+      if (vpa && !isValidVpa(vpa)) {
+        return res.status(400).json({ error: "invalid_upi_id", message: "UPI ID must look like name@bank" });
+      }
+      set("maintenance_upi_id", vpa || null);
     }
 
+    if (maintenance_payee_name != null) {
+      // `pn` in the UPI intent URI is truncated to 50 chars by buildUpiUri anyway.
+      const payee = String(maintenance_payee_name).trim().slice(0, 50);
+      set("maintenance_payee_name", payee || null);
+    }
+
+    if (!sets.length) {
+      return res.status(400).json({ error: "no_changes", message: "Nothing to update." });
+    }
+
+    params.push(societyId);
     const result = await dbQuery(
-      `UPDATE societies SET
-         maintenance_enabled    = COALESCE($1, maintenance_enabled),
-         maintenance_upi_id     = COALESCE($2, maintenance_upi_id),
-         maintenance_payee_name = COALESCE($3, maintenance_payee_name)
-       WHERE id = $4
+      `UPDATE societies SET ${sets.join(", ")}
+       WHERE id = $${params.length}
        RETURNING id, maintenance_enabled, maintenance_upi_id, maintenance_payee_name`,
-      [
-        maintenance_enabled    != null ? !!maintenance_enabled  : null,
-        maintenance_upi_id     != null ? maintenance_upi_id     : null,
-        maintenance_payee_name != null ? maintenance_payee_name : null,
-        societyId,
-      ],
+      params,
     );
     if (!result?.rows?.length) return res.status(404).json({ error: "not_found" });
     return res.json({ config: result.rows[0] });

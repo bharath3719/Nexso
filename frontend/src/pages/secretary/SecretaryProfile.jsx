@@ -1,7 +1,8 @@
 /**
  * SecretaryProfile.jsx
  * ─────────────────────
- * Secretary's own profile: view society details + change password + sign out.
+ * Secretary's own profile: society details, payment settings (the society's
+ * collection UPI ID — set once, changed rarely), change password, sign out.
  */
 
 import React, { useEffect, useState } from "react";
@@ -10,9 +11,11 @@ import {
   MessageBar, MessageBarType, Spinner,
 } from "@fluentui/react";
 import { PageHeader } from "../../components/shared/PageHeader.jsx";
+import { UpiSetupModal } from "../../components/maintenance/UpiSetupModal.jsx";
 import { api } from "../../services/api.js";
 import { T } from "../../styles/typography.js";
 import "../../styles/SecretaryLayout.css";
+import "../../styles/Maintenance.css";
 
 function InfoRow({ label, value }) {
   return (
@@ -34,14 +37,46 @@ export function SecretaryProfile({ onLogout }) {
   const [pwSuccess, setPwSuccess] = useState(false);
   const [pwSaving,  setPwSaving]  = useState(false);
 
+  // Payment settings (society-wide, not per-user)
+  const [config,    setConfig]    = useState(null);
+  const [showUpi,   setShowUpi]   = useState(false);
+  const [upiSaving, setUpiSaving] = useState(false);
+  const [upiNotice, setUpiNotice] = useState(null); // { ok: boolean, text: string }
+
   useEffect(() => {
     let cancelled = false;
-    api.auth.me()
-      .then((data) => { if (!cancelled) setAccount(data.account); })
-      .catch(() => { /* ignore */ })
+    Promise.all([
+      api.auth.me().catch(() => null),
+      api.secretary.maintenance.getConfig().catch(() => null),
+    ])
+      .then(([me, cfg]) => {
+        if (cancelled) return;
+        if (me)  setAccount(me.account);
+        if (cfg) setConfig(cfg.config);
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  const handleSaveUpi = async (payload) => {
+    setUpiSaving(true);
+    setUpiNotice(null);
+    try {
+      const data = await api.secretary.maintenance.updateConfig(payload);
+      setConfig((c) => ({ ...c, ...data.config }));
+      setShowUpi(false);
+      setUpiNotice({
+        ok: true,
+        text: payload.maintenance_upi_id
+          ? "Payment details saved. New bills and reminders will use this UPI ID."
+          : "UPI ID removed. Residents can no longer pay online.",
+      });
+    } catch (err) {
+      setUpiNotice({ ok: false, text: err?.data?.message || "Failed to save payment details." });
+    } finally {
+      setUpiSaving(false);
+    }
+  };
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
@@ -81,7 +116,7 @@ export function SecretaryProfile({ onLogout }) {
 
   return (
     <div className="sec-page">
-      <PageHeader title="My Profile" subtitle="Society details and account settings" />
+      <PageHeader title="My Profile" subtitle="Society details, payment settings, and your account" />
 
       {loading ? (
         <Spinner label="Loading profile…" />
@@ -105,6 +140,60 @@ export function SecretaryProfile({ onLogout }) {
                   ? new Date(account.last_login).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
                   : "—"
               } />
+            </div>
+          </div>
+
+          {/* Payment settings — set once, changed rarely */}
+          <div className="sec-card">
+            <div className="sec-card-header">
+              <Text styles={T.sectionHeader}>
+                Payment Settings
+              </Text>
+            </div>
+            <div className="sec-card-body--padded">
+              {upiNotice && (
+                <MessageBar
+                  messageBarType={upiNotice.ok ? MessageBarType.success : MessageBarType.error}
+                  onDismiss={() => setUpiNotice(null)}
+                  style={{ marginBottom: 12 }}
+                >
+                  {upiNotice.text}
+                </MessageBar>
+              )}
+
+              <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, marginBottom: 14 }}>
+                The UPI ID residents' maintenance payments are collected into. It appears
+                on every bill, WhatsApp reminder and pay link.
+              </div>
+
+              {config?.maintenance_upi_id ? (
+                <>
+                  <InfoRow label="Collection UPI ID" value={config.maintenance_upi_id} />
+                  <InfoRow label="Payee Name" value={config.maintenance_payee_name || config.name} />
+                  <div style={{ marginTop: 14 }}>
+                    <DefaultButton
+                      text="Change UPI ID"
+                      iconProps={{ iconName: "Edit" }}
+                      onClick={() => setShowUpi(true)}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: "14px 16px" }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#92400e", marginBottom: 4 }}>
+                    No UPI ID set up yet
+                  </div>
+                  <div style={{ fontSize: 12.5, color: "#a16207", lineHeight: 1.6, marginBottom: 12 }}>
+                    Until you add one, residents can't pay maintenance online — bills and
+                    reminders go out without a payment option.
+                  </div>
+                  <PrimaryButton
+                    text="Set up UPI ID"
+                    iconProps={{ iconName: "PaymentCard" }}
+                    onClick={() => setShowUpi(true)}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -183,6 +272,17 @@ export function SecretaryProfile({ onLogout }) {
               styles={{ root: { borderColor: "#e2e8f0" } }}
             />
           </div>
+
+          {showUpi && (
+            <UpiSetupModal
+              currentUpiId={config?.maintenance_upi_id || ""}
+              currentPayeeName={config?.maintenance_payee_name || ""}
+              societyName={config?.name || account?.society_name || ""}
+              saving={upiSaving}
+              onSave={handleSaveUpi}
+              onClose={() => setShowUpi(false)}
+            />
+          )}
         </>
       )}
     </div>

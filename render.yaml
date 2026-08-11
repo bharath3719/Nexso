@@ -6,12 +6,80 @@ services:
     buildCommand: npm ci
     startCommand: node src/index.js
     healthCheckPath: /health
+    # Bill PDFs are written to disk and their URLs go to residents over WhatsApp,
+    # so they have to survive deploys. Render's normal filesystem does not — it is
+    # wiped on every deploy, restart and instance move. Without this disk every
+    # bill link 404s the next time the service redeploys.
+    #
+    # Note: a service with a disk cannot run more than one instance. That is the
+    # right setting here anyway — the maintenance and escalation schedulers are
+    # in-process node-cron, so a second instance would double-generate dues and
+    # send every reminder twice.
+    disk:
+      name: nexso-bills
+      mountPath: /var/data/bills
+      sizeGB: 1
+    envVars:
+      # Must match the disk mountPath above.
+      - key: BILLS_DIR
+        value: /var/data/bills
+      # Names the bill PDF files. Kept separate from JWT_SECRET so that rotating
+      # the JWT key does not rename every bill and break links already sent.
+      - key: BILL_URL_SECRET
+        generateValue: true
+      # NODE_ENV must be production: it gates the boot-time check that refuses
+      # to start with a missing/weak JWT_SECRET or WHATSAPP_APP_SECRET.
+      - key: NODE_ENV
+        value: production
+      # Required behind Render's proxy, or express-rate-limit buckets every
+      # client under the proxy IP and the login/OTP throttles stop working.
+      - key: TRUST_PROXY
+        value: "true"
+      # Public origin of THIS service — used to build resident pay links and
+      # bill-PDF URLs. Set to the deployed backend URL.
+      - key: BACKEND_PUBLIC_URL
+        sync: false
+      # Lock CORS to the frontend origin below.
+      - key: CORS_ORIGIN
+        sync: false
+      # Generate with: openssl rand -base64 32
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      # ── WhatsApp (Meta Cloud API) ──────────────────────────────────────────
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      # Required in production — without it inbound webhooks are unauthenticated.
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      # ── Payments (optional — UPI rail is used when these are unset) ─────────
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      # ── Email (optional — reminders fall back to WhatsApp when unset) ───────
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
 
   - type: static
     name: nexso-frontend
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
+    envVars:
+      # Vite inlines this at BUILD time. Without it the bundle ships with the
+      # localhost fallback baked in and every API call fails in production.
+      - key: VITE_API_BASE
+        sync: false
     routes:
       - type: rewrite
         source: /*
