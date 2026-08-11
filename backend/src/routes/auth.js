@@ -153,9 +153,20 @@ router.get("/me", requireAuth, async (req, res) => {
 // as full international number (91XXXXXXXXXX) which the Cloud API requires.
 
 function normalizePhone(raw) {
-  const digits = (raw || "").trim().replace(/\s+/g, "").replace(/^\+/, "");
-  // Strip 91 country code prefix so DB always sees the 10-digit local number.
-  return digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits;
+  const digits = String(raw || "").trim().replace(/\D/g, ""
+  );
+
+  if (digits.length === 13 && digits.startsWith("0091")) {
+    return digits.slice(4);
+  }
+  if (digits.length === 12 && digits.startsWith("91")) {
+    return digits.slice(2);
+  }
+  if (digits.length === 11 && digits.startsWith("0")) {
+    return digits.slice(1);
+  }
+
+  return digits;
 }
 
 function toWhatsAppNumber(localPhone) {
@@ -177,7 +188,11 @@ router.post("/otp/request", async (req, res) => {
        FROM residents r
        JOIN units     u ON u.id = r.unit_id
        JOIN societies s ON s.id = r.society_id
-       WHERE REGEXP_REPLACE(REPLACE(r.phone, ' ', ''), '^\\+?91', '') = $1
+       WHERE REGEXP_REPLACE(
+               REGEXP_REPLACE(r.phone, '\\D', '', 'g'),
+               '^(?:0|91)+',
+               ''
+             ) = $1
          AND r.unit_id IS NOT NULL
        LIMIT 1`,
       [phone],
@@ -229,7 +244,7 @@ router.post("/otp/request", async (req, res) => {
 
 router.post("/otp/verify", async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
-  const otp   = (req.body?.otp || "").trim();
+  const otp   = String(req.body?.otp || "").trim();
 
   if (!phone || !otp) {
     return res.status(400).json({ error: "phone_and_otp_required" });
