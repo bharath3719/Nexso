@@ -26,10 +26,44 @@ export function getDb() {
 }
 
 export async function ensureSchema() {
-  const db = getDb();
-  if (!db) return false;
+  const dbPool = getDb();
+  if (!dbPool) return false;
+
+  // One dedicated connection for the whole migration. `pool.query()` checks out
+  // an arbitrary idle client per call, so BEGIN, the ~300 DDL statements below
+  // and COMMIT were never guaranteed to land on the same physical connection.
+  // Anything that ran on a client which then never received the COMMIT was
+  // discarded when that connection was recycled — and COMMIT issued on a
+  // connection with no open transaction only warns, it does not throw. So this
+  // function returned `true` with an arbitrary subset of the schema missing.
+  const client = await dbPool.connect();
+
+  // Each statement runs inside its own SAVEPOINT. A single failure now rolls
+  // back only that statement and is reported by name, instead of poisoning the
+  // transaction and taking every other migration down with it.
+  const failures = [];
+  let seq = 0;
+  const db = {
+    query: async (sql, params) => {
+      const savepoint = `nexso_stmt_${++seq}`;
+      await client.query(`SAVEPOINT ${savepoint}`);
+      try {
+        const result = await client.query(sql, params);
+        await client.query(`RELEASE SAVEPOINT ${savepoint}`);
+        return result;
+      } catch (err) {
+        await client.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+        failures.push({
+          sql: String(sql).trim().replace(/\s+/g, " ").slice(0, 200),
+          message: err.message,
+        });
+        return null;
+      }
+    },
+  };
+
   try {
-    await db.query("BEGIN");
+    await client.query("BEGIN");
 
     await db.query(`CREATE TABLE IF NOT EXISTS societies (
       id SERIAL PRIMARY KEY,
@@ -633,14 +667,26 @@ export async function ensureSchema() {
     await db.query(`CREATE INDEX IF NOT EXISTS idx_society_other_income_society ON society_other_income (society_id)`);
     await db.query(`CREATE INDEX IF NOT EXISTS idx_society_other_income_date    ON society_other_income (date)`);
 
-    await db.query("COMMIT");
+    await client.query("COMMIT");
     connected = true;
+
+    if (failures.length) {
+      // Loud and specific. A partially-applied schema that reports success is
+      // what produced the OTP-login outage: the failure only surfaced weeks
+      // later as a 500 on whichever endpoint first read a missing column.
+      log(`Schema ensure FAILED for ${failures.length} statement(s) — these migrations did NOT apply:`);
+      failures.forEach((f, i) => log(`  [${i + 1}] ${f.message} | SQL: ${f.sql}`));
+      return false;
+    }
+
     log("Database schema ensured.");
     return true;
   } catch (err) {
-    await db.query("ROLLBACK");
+    await client.query("ROLLBACK").catch(() => {});
     log("Failed to ensure schema:", err);
     return false;
+  } finally {
+    client.release();
   }
 }
 

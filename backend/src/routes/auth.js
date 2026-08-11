@@ -152,21 +152,19 @@ router.get("/me", requireAuth, async (req, res) => {
 // Normalise phone: always store/query as 10-digit local number; send WhatsApp
 // as full international number (91XXXXXXXXXX) which the Cloud API requires.
 
+// Canonical form is the bare 10-digit local number. Accepts every shape a
+// resident might type and every shape the residents table might hold:
+//   +91 98765 43210 · 0091-9876543210 · 09876543210 · 9876543210
+//
+// Taking the LAST 10 digits rather than stripping a leading 91/0 is deliberate.
+// A valid 10-digit Indian mobile can itself begin with 91 (e.g. 9198765432);
+// prefix-stripping mangles that into an 8-digit string matching nothing, and
+// worse, the JS and SQL sides stripped differently, so those residents could
+// request an OTP but never verify it. `RIGHT(digits, 10)` in the SQL below is
+// the exact mirror of this — keep the two in step.
 function normalizePhone(raw) {
-  const digits = String(raw || "").trim().replace(/\D/g, ""
-  );
-
-  if (digits.length === 13 && digits.startsWith("0091")) {
-    return digits.slice(4);
-  }
-  if (digits.length === 12 && digits.startsWith("91")) {
-    return digits.slice(2);
-  }
-  if (digits.length === 11 && digits.startsWith("0")) {
-    return digits.slice(1);
-  }
-
-  return digits;
+  const digits = String(raw || "").replace(/\D/g, "");
+  return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
 function toWhatsAppNumber(localPhone) {
@@ -188,11 +186,7 @@ router.post("/otp/request", async (req, res) => {
        FROM residents r
        JOIN units     u ON u.id = r.unit_id
        JOIN societies s ON s.id = r.society_id
-       WHERE REGEXP_REPLACE(
-               REGEXP_REPLACE(r.phone, '\\D', '', 'g'),
-               '^(?:0|91)+',
-               ''
-             ) = $1
+       WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = $1
          AND r.unit_id IS NOT NULL
        LIMIT 1`,
       [phone],
@@ -269,17 +263,6 @@ router.post("/otp/verify", async (req, res) => {
 
     const tokenId = tokenResult.rows[0].id;
 
-    // Burn the token atomically — the SELECT above and this UPDATE are separate
-    // round trips, so without the `used = FALSE` guard two concurrent verifies
-    // could both consume the same code.
-    const burned = await dbQuery(
-      `UPDATE otp_tokens SET used = TRUE WHERE id = $1 AND used = FALSE RETURNING id`,
-      [tokenId],
-    );
-    if (!burned?.rows?.length) {
-      return res.status(401).json({ error: "invalid_or_expired_otp" });
-    }
-
     // Look up the resident.
     const resResult = await dbQuery(
       `SELECT r.id AS resident_id, r.name, r.society_id, r.unit_id,
@@ -287,7 +270,7 @@ router.post("/otp/verify", async (req, res) => {
        FROM residents r
        JOIN units     u ON u.id = r.unit_id
        JOIN societies s ON s.id = r.society_id
-       WHERE REGEXP_REPLACE(REPLACE(r.phone, ' ', ''), '^\\+?91', '') = $1
+       WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = $1
          AND r.unit_id IS NOT NULL
        LIMIT 1`,
       [phone],
@@ -302,7 +285,8 @@ router.post("/otp/verify", async (req, res) => {
     // portal_role filter matters: a staff account whose username happens to be
     // this phone number must not be reassigned to the resident here.
     const existingAcc = await dbQuery(
-      `SELECT id, force_profile_setup FROM auth_accounts
+      `SELECT id, COALESCE(force_profile_setup, TRUE) AS force_profile_setup
+       FROM auth_accounts
        WHERE LOWER(username) = LOWER($1) AND portal_role = 'RESIDENT' LIMIT 1`,
       [phone],
     );
@@ -325,6 +309,23 @@ router.post("/otp/verify", async (req, res) => {
       );
       accountId         = newAcc.rows[0].id;
       forceProfileSetup = true;
+    }
+
+    // Burn the token as the LAST thing before issuing the JWT. It used to be
+    // burned right after the SELECT, so any failure further down — a missing
+    // column, a resident lookup miss — consumed the code anyway and forced the
+    // resident to request a fresh OTP for every retry. That turned one broken
+    // query into "OTP login is completely dead".
+    //
+    // The `used = FALSE` guard keeps it atomic: the SELECT above and this UPDATE
+    // are separate round trips, so without it two concurrent verifies could both
+    // consume the same code. Losing the race is a genuine 401.
+    const burned = await dbQuery(
+      `UPDATE otp_tokens SET used = TRUE WHERE id = $1 AND used = FALSE RETURNING id`,
+      [tokenId],
+    );
+    if (!burned?.rows?.length) {
+      return res.status(401).json({ error: "invalid_or_expired_otp" });
     }
 
     const payload = {
