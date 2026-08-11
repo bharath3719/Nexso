@@ -141,10 +141,16 @@
 }
 
 /* ── ResidentCard ────────────────────────────────────────────────────────────── */
+/* Wraps on purpose. The card carries seven columns, and inside the unit modal
+   (560px) they don't fit on one line — without wrapping the contact column is
+   squeezed to nothing and the phone number spills out over the next column
+   instead of the columns simply stacking. */
 .sd-resident-card {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
+  row-gap: 8px;
   padding: 10px 14px;
   background: #fff;
   border-radius: 9px;
@@ -169,8 +175,10 @@
   margin-top: 3px;
   flex-wrap: wrap;
 }
+/* The basis is what makes the wrap happen: a line that can't spare 190px for the
+   contact block moves it down whole rather than shrinking it to a sliver. */
 .sd-resident-contact {
-  flex: 1;
+  flex: 1 1 190px;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -180,10 +188,15 @@
   display: flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
   font-size: 12px;
   color: #64748b;
 }
-.sd-resident-email {
+.sd-resident-contact-row i {
+  flex-shrink: 0;
+}
+.sd-resident-email,
+.sd-resident-phone {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -662,6 +675,28 @@
   align-items: center;
   gap: 8px;
 }
+.sd-preview-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  height: 30px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+.sd-preview-btn:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
 .sd-towers-cards {
   padding: 20px 20px 16px;
   display: flex;
@@ -802,7 +837,142 @@
   color: #d97706;
 }
 
+/* ── View toggle (3D model ⇄ list) ───────────────────────────────────────────── */
+/* Sits in the towers header. It takes the auto margin that used to push the
+   preview button right, so the two sit together as one right-hand cluster. */
+.sd-view-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 9px;
+  background: #eef2f7;
+  border: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+.sd-view-toggle + .sd-preview-btn {
+  margin-left: 0;
+}
+.sd-view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 11px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.sd-view-tab:hover {
+  color: #1d4ed8;
+}
+.sd-view-tab--on,
+.sd-view-tab--on:hover {
+  background: #fff;
+  color: #1d4ed8;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14);
+}
+
+/* ── Unit focus modal (opened by clicking a window in the 3D model) ──────────── */
+.sd-unit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  /* plain fade — sd-fade-in shifts on Y, which would slide the full-screen
+     overlay off its own edges */
+  animation: sd-overlay-in 0.15s ease;
+}
+.sd-unit-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.4);
+  overflow: hidden;
+  animation: sd-modal-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.sd-unit-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+.sd-unit-modal-badge {
+  flex-shrink: 0;
+  min-width: 46px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+.sd-unit-modal-titles {
+  flex: 1;
+  min-width: 0;
+}
+.sd-unit-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.sd-unit-modal-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #64748b;
+}
+.sd-unit-modal-body {
+  padding: 18px;
+  overflow-y: auto;
+}
+/* The header already names the unit and its occupancy, so the block's own label
+   row keeps only its Add Resident button. */
+.sd-unit-modal-body .sd-unit-block {
+  margin-bottom: 0;
+}
+.sd-unit-modal-body .sd-unit-badge,
+.sd-unit-modal-body .sd-unit-divider,
+.sd-unit-modal-body .sd-unit-count {
+  display: none;
+}
+.sd-unit-modal-body .sd-unit-label-row {
+  justify-content: flex-end;
+  margin-bottom: 0;
+  gap: 0;
+}
+.sd-unit-modal-body .sd-unit-label-row:has(.sd-unit-add-btn) {
+  margin-bottom: 10px;
+}
+
 @keyframes sd-fade-in {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes sd-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes sd-modal-pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
