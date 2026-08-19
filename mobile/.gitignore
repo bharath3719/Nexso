@@ -32,6 +32,11 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+
+# Play Console service-account key used by `eas submit` — grants upload rights
+# to the Nexso listing. Never commit.
+play-service-account.json
 
 # typescript
 *.tsbuildinfo
