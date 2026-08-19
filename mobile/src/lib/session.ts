@@ -17,7 +17,13 @@
 
 import * as SecureStore from 'expo-secure-store';
 
-export type PortalRole = 'RESIDENT' | 'SECRETARY' | 'VENDOR' | 'GUARD' | 'NEXSO_ADMIN';
+/**
+ * Values as the backend emits them — `auth_accounts.portal_role`, returned
+ * verbatim by /api/auth/login. The secretary role is `SOCIETY_ADMIN`, not
+ * `SECRETARY`; naming it otherwise here silently routed every secretary login
+ * to the unsupported-role screen.
+ */
+export type PortalRole = 'RESIDENT' | 'SOCIETY_ADMIN' | 'VENDOR' | 'GUARD' | 'NEXSO_ADMIN';
 
 export type Session = {
   token: string;

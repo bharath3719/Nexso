@@ -21,7 +21,7 @@ import { COLORS } from '../src/theme/tokens';
 /** Landing route for each portal role the mobile app supports. */
 const HOME_FOR_ROLE: Record<string, string> = {
   RESIDENT: '/(resident)',
-  SECRETARY: '/(secretary)',
+  SOCIETY_ADMIN: '/(secretary)',
 };
 
 function RootNavigator() {
