@@ -8,7 +8,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Screen } from '../../src/components/Screen';
 import { Button, Card, StatusPill } from '../../src/components/ui';
 import { useApi } from '../../src/hooks/useApi';

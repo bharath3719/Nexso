@@ -9,7 +9,7 @@
 import React, { useState } from 'react';
 import { Alert, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Screen } from '../../src/components/Screen';
 import { Button, Card, ChipGroup, StatusPill } from '../../src/components/ui';
 import { useApi } from '../../src/hooks/useApi';

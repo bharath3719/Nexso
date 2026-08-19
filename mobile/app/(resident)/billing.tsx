@@ -13,7 +13,7 @@
 import React, { useState } from 'react';
 import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Screen } from '../../src/components/Screen';
 import { Banner, Button, Card, ChipGroup, StatusPill } from '../../src/components/ui';
 import { useApi } from '../../src/hooks/useApi';

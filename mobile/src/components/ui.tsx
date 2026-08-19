@@ -21,7 +21,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { COLORS, RADIUS, SHADOW, SPACING, toneFor, type Tone } from '../theme/tokens';
 import { TYPE } from '../theme/type';
 import { avatarColor, initials } from '../utils/format';

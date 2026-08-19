@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Screen } from '../../src/components/Screen';
 import { Card, StatusPill } from '../../src/components/ui';
 import { useApi } from '../../src/hooks/useApi';

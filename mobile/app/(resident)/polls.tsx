@@ -1,14 +1,16 @@
 /**
  * Society polls.
  *
- * Results are only revealed once this resident has voted, or once the poll has
- * closed — showing the running tally to someone who has not voted yet nudges
- * their answer.
+ * Shows the total vote count and this resident's own choice, but not the
+ * per-option split: GET /api/resident/polls returns only `total_votes` and
+ * `my_vote`. The per-option tallies exist solely behind the secretary's
+ * /polls/:id/results endpoint, which residents cannot call. So the UI does not
+ * promise a breakdown it has no way to render.
  */
 
 import React, { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Screen } from '../../src/components/Screen';
 import { Card, StatusPill } from '../../src/components/ui';
 import { useApi } from '../../src/hooks/useApi';
@@ -25,8 +27,6 @@ type Poll = {
   is_open: boolean;
   total_votes: string;
   my_vote: number | null;
-  /** Per-option tallies, present only on some responses — treated as optional. */
-  results?: number[] | null;
 };
 
 export default function Polls() {
@@ -96,7 +96,6 @@ export default function Polls() {
         <View style={s.list}>
           {(data.polls ?? []).map((poll) => {
             const hasVoted = poll.my_vote !== null && poll.my_vote !== undefined;
-            const showResults = hasVoted || !poll.is_open;
             const total = Number(poll.total_votes || 0);
             const options = Array.isArray(poll.options) ? poll.options : [];
 
@@ -123,9 +122,6 @@ export default function Polls() {
                 <View style={s.options}>
                   {options.map((option, index) => {
                     const chosen = poll.my_vote === index;
-                    const count = poll.results?.[index];
-                    const pct = showResults && total > 0 && count != null ? Math.round((count / total) * 100) : null;
-
                     return (
                       <Pressable
                         key={`${poll.id}-${index}`}
@@ -139,28 +135,28 @@ export default function Polls() {
                           pressed && poll.is_open && { opacity: 0.7 },
                         ]}
                       >
-                        {/* Result bar sits behind the label rather than beside it,
-                            so a long option is not squeezed into half the width. */}
-                        {pct !== null ? <View style={[s.bar, { width: `${pct}%` }]} /> : null}
-
                         <Ionicons
                           name={chosen ? 'radio-button-on' : 'radio-button-off'}
                           size={18}
                           color={chosen ? COLORS.primary : COLORS.textDisabled}
                         />
                         <Text style={[TYPE.body, s.flex, chosen && s.optionLabelChosen]}>{option}</Text>
-                        {pct !== null ? <Text style={s.pct}>{pct}%</Text> : null}
+                        {chosen ? (
+                          <Text style={s.yourVote}>Your vote</Text>
+                        ) : null}
                       </Pressable>
                     );
                   })}
                 </View>
 
                 {!poll.is_open ? (
-                  <Text style={[TYPE.caption, s.foot]}>Voting has closed on this poll.</Text>
+                  <Text style={[TYPE.caption, s.foot]}>
+                    Voting has closed. Your committee will share the outcome.
+                  </Text>
                 ) : hasVoted ? (
                   <Text style={[TYPE.caption, s.foot]}>Your vote is recorded. Tap another option to change it.</Text>
                 ) : (
-                  <Text style={[TYPE.caption, s.foot]}>Tap an option to vote. Results appear once you do.</Text>
+                  <Text style={[TYPE.caption, s.foot]}>Tap an option to cast your vote.</Text>
                 )}
               </Card>
             );
@@ -193,8 +189,7 @@ const s = StyleSheet.create({
   },
   optionChosen: { borderColor: COLORS.primary },
   optionLabelChosen: { fontWeight: '600', color: COLORS.textPrimary },
-  bar: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: COLORS.primaryTint },
-  pct: { fontSize: 13, fontWeight: '700', color: COLORS.textSecondary, fontVariant: ['tabular-nums'] },
+  yourVote: { fontSize: 11, fontWeight: '700', color: COLORS.primary, letterSpacing: 0.2 },
 
   foot: { marginTop: SPACING.md },
 });

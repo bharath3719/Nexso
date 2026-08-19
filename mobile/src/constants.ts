@@ -74,8 +74,12 @@ export const DUE_FILTERS = [
   { value: 'OVERDUE', label: 'Overdue' },
 ] as const;
 
-/** Broadcast audiences — mirrors the secretary broadcast page on the web. */
+/**
+ * Broadcast audiences. The backend branches on exactly these three values in
+ * routes/secretary.js — anything else silently falls through to ALL.
+ */
 export const BROADCAST_TARGETS = [
   { value: 'ALL', label: 'Everyone' },
   { value: 'TOWER', label: 'One tower' },
+  { value: 'OVERDUE', label: 'Overdue only' },
 ] as const;

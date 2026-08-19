@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenScroll } from '../../src/components/Screen';
 import { Banner, Button, ErrorNotice } from '../../src/components/ui';
 import { useAuth } from '../../src/lib/auth';

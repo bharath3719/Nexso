@@ -10,7 +10,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenScroll } from '../../src/components/Screen';
 import { Button, ErrorNotice, Field } from '../../src/components/ui';
 import { useAuth } from '../../src/lib/auth';

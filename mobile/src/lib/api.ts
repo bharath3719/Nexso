@@ -260,7 +260,7 @@ export const api = {
     changePassword: (currentPassword: string, newPassword: string) =>
       post('/api/auth/change-password', { currentPassword, newPassword }),
 
-    me: () => get('/api/auth/me'),
+    me: (signal?: AbortSignal) => get('/api/auth/me', { signal }),
 
     /** Resident login step 1 — sends a 6-digit OTP over WhatsApp. */
     otpRequest: (phone: string) => post('/api/auth/otp/request', { phone }, { auth: false }),

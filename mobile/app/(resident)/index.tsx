@@ -10,7 +10,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenScroll } from '../../src/components/Screen';
 import {
   Avatar,
@@ -28,7 +28,7 @@ import {
 import { useApi } from '../../src/hooks/useApi';
 import { api } from '../../src/lib/api';
 import { useSession } from '../../src/lib/auth';
-import { COLORS, DUE_STATUS, PRIORITY, RADIUS, SPACING, toneFor } from '../../src/theme/tokens';
+import { COLORS, DUE_STATUS, PRIORITY, RADIUS, SPACING } from '../../src/theme/tokens';
 import { TYPE } from '../../src/theme/type';
 import { firstName, formatINRShort, formatMonth, formatRelative } from '../../src/utils/format';
 

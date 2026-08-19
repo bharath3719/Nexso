@@ -8,7 +8,7 @@
 import React from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenScroll } from './Screen';
 import { Avatar, Card, Chevron, Row, SectionTitle } from './ui';
 import { useAuth, useSession } from '../lib/auth';

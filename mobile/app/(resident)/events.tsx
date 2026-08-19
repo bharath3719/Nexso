@@ -8,7 +8,7 @@
 
 import React, { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Screen } from '../../src/components/Screen';
 import { Card } from '../../src/components/ui';
 import { useApi } from '../../src/hooks/useApi';
@@ -22,7 +22,8 @@ type EventRow = {
   id: number;
   title: string;
   description: string | null;
-  venue: string | null;
+  /** society_events.location — the column is `location`, not `venue`. */
+  location: string | null;
   event_date: string;
   my_response: string | null;
   rsvp_yes: string;
@@ -96,11 +97,11 @@ export default function Events() {
                       {event.title}
                     </Text>
                     <Text style={TYPE.rowMeta}>{formatDateTime(event.event_date)}</Text>
-                    {event.venue ? (
+                    {event.location ? (
                       <View style={s.venue}>
                         <Ionicons name="location-outline" size={14} color={COLORS.textMuted} />
                         <Text style={[TYPE.caption, s.flex]} numberOfLines={1}>
-                          {event.venue}
+                          {event.location}
                         </Text>
                       </View>
                     ) : null}

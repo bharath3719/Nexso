@@ -10,7 +10,7 @@
 import React, { useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { COLORS, RADIUS, SPACING } from '../theme/tokens';
 import { TYPE } from '../theme/type';
 import { Button } from './ui';
