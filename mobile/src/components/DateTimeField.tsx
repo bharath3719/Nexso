@@ -14,29 +14,41 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { COLORS, RADIUS, SPACING } from '../theme/tokens';
 import { TYPE } from '../theme/type';
 import { Button } from './ui';
-import { formatDateTime } from '../utils/format';
+import { formatDateShort, formatDateTime } from '../utils/format';
 
 export function DateTimeField({
   label,
   value,
   onChange,
   minimumDate,
+  maximumDate,
   error,
   hint,
   required,
+  mode = 'datetime',
 }: {
   label: string;
   value: Date;
   onChange: (next: Date) => void;
   minimumDate?: Date;
+  maximumDate?: Date;
   error?: string | null;
   hint?: string;
   required?: boolean;
+  /**
+   * 'date' skips the time step entirely — a ledger entry is dated, not
+   * timestamped, and asking for a clock time you then discard is friction.
+   */
+  mode?: 'datetime' | 'date';
 }) {
+  const dateOnly = mode === 'date';
+
   // Android runs date → time in sequence; iOS shows one sheet with both.
   const [androidStage, setAndroidStage] = useState<'date' | 'time' | null>(null);
   const [iosOpen, setIosOpen] = useState(false);
   const [draft, setDraft] = useState(value);
+
+  const display = dateOnly ? formatDateShort(value.toISOString()) : formatDateTime(value.toISOString());
 
   function open() {
     setDraft(value);
@@ -55,6 +67,13 @@ export function DateTimeField({
       // reset the clock to midnight.
       const merged = new Date(selected);
       merged.setHours(draft.getHours(), draft.getMinutes(), 0, 0);
+
+      if (dateOnly) {
+        setAndroidStage(null);
+        onChange(merged);
+        return;
+      }
+
       setDraft(merged);
       setAndroidStage('time');
       return;
@@ -76,11 +95,11 @@ export function DateTimeField({
       <Pressable
         onPress={open}
         accessibilityRole="button"
-        accessibilityLabel={`${label}: ${formatDateTime(value.toISOString())}. Tap to change.`}
+        accessibilityLabel={`${label}: ${display}. Tap to change.`}
         style={({ pressed }) => [s.control, !!error && s.controlError, pressed && { opacity: 0.7 }]}
       >
         <Ionicons name="calendar-outline" size={17} color={COLORS.textSecondary} />
-        <Text style={[TYPE.body, s.value]}>{formatDateTime(value.toISOString())}</Text>
+        <Text style={[TYPE.body, s.value]}>{display}</Text>
         <Ionicons name="chevron-down" size={16} color={COLORS.textMuted} />
       </Pressable>
 
@@ -95,6 +114,7 @@ export function DateTimeField({
           value={draft}
           mode={androidStage}
           minimumDate={androidStage === 'date' ? minimumDate : undefined}
+          maximumDate={androidStage === 'date' ? maximumDate : undefined}
           onChange={handleAndroidChange}
         />
       ) : null}
@@ -106,9 +126,10 @@ export function DateTimeField({
             <Text style={TYPE.sectionHeader}>{label}</Text>
             <DateTimePicker
               value={draft}
-              mode="datetime"
+              mode={dateOnly ? 'date' : 'datetime'}
               display="spinner"
               minimumDate={minimumDate}
+              maximumDate={maximumDate}
               onChange={(_e, selected) => selected && setDraft(selected)}
             />
             <View style={s.sheetActions}>

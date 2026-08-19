@@ -65,6 +65,14 @@ const GROUPS: MoreGroup[] = [
         accent: COLORS.success,
         hint: 'Monthly surplus and where the money went',
       },
+      {
+        label: 'Record an expense',
+        href: '/(secretary)/new-expense',
+        icon: 'add-circle-outline',
+        tint: COLORS.warningTint,
+        accent: COLORS.warning,
+        hint: 'Log a payment while you still have the bill in hand',
+      },
     ],
   },
   {

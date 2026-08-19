@@ -1,22 +1,23 @@
 /**
- * Income and expenses — monthly summary.
+ * Income and expenses — the monthly summary, and the way in to the rest.
  *
- * Read-only on purpose. The web SecretaryExpenses page is a full ledger with an
- * editable expense sheet, category rows and an annual table; that is a
- * spreadsheet, and a spreadsheet on a 6-inch screen is worse than no
- * spreadsheet. What is genuinely useful away from a desk is the answer to "are
- * we up or down this month, and on what" — so that is what this shows, with
- * entry left to the web portal.
+ * This screen answers "are we up or down this month, and on what". The entries
+ * behind it live in `ledger.tsx` and the 12-month statement in `annual.tsx`;
+ * both used to be web-only, on the reasoning that a ledger is a spreadsheet.
+ * The entry form is not a spreadsheet though — recording a payment is exactly
+ * the thing you do away from a desk — and the annual table transposes to a
+ * month-per-card rather than needing the width.
  */
 
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Screen } from '../../src/components/Screen';
-import { Banner, Button, Card } from '../../src/components/ui';
+import { Button, Card, Row } from '../../src/components/ui';
 import { useApi } from '../../src/hooks/useApi';
 import { api } from '../../src/lib/api';
-import { COLORS, SPACING } from '../../src/theme/tokens';
+import { COLORS, RADIUS, SPACING } from '../../src/theme/tokens';
 import { TYPE } from '../../src/theme/type';
 import { addMonths, currentMonth, formatINR, formatMonth } from '../../src/utils/format';
 
@@ -31,6 +32,7 @@ type Summary = {
 };
 
 export default function Expenses() {
+  const router = useRouter();
   const [month, setMonth] = useState(currentMonth());
   const state = useApi<Summary>((signal) => api.secretary.expenses.summary(month, signal), [month]);
 
@@ -128,10 +130,29 @@ export default function Expenses() {
               )}
             </Card>
 
-            <Banner tone="info">
-              Adding and editing entries, the monthly expense sheet and the annual audit table live in
-              the web portal — they need a wider screen than this.
-            </Banner>
+            {/* Where the numbers above come from, and where they roll up to. */}
+            <Card padded={false}>
+              <Row onPress={() => router.push('/(secretary)/ledger')}>
+                <View style={[s.linkIcon, { backgroundColor: COLORS.primaryTint }]}>
+                  <Ionicons name="list-outline" size={18} color={COLORS.primary} />
+                </View>
+                <View style={s.flex}>
+                  <Text style={TYPE.rowTitle}>Entries for {formatMonth(month)}</Text>
+                  <Text style={TYPE.caption}>Add, edit or remove an expense or other income</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={COLORS.textDisabled} />
+              </Row>
+              <Row onPress={() => router.push('/(secretary)/annual')} last>
+                <View style={[s.linkIcon, { backgroundColor: COLORS.successTint }]}>
+                  <Ionicons name="document-text-outline" size={18} color={COLORS.success} />
+                </View>
+                <View style={s.flex}>
+                  <Text style={TYPE.rowTitle}>Annual statement</Text>
+                  <Text style={TYPE.caption}>Month-by-month I&E for the AGM and your auditor</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={COLORS.textDisabled} />
+              </Row>
+            </Card>
           </View>
         );
       }}
@@ -199,4 +220,12 @@ const s = StyleSheet.create({
   lineValue: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary, fontVariant: ['tabular-nums'] },
 
   emptyRow: { paddingHorizontal: SPACING.lg, paddingVertical: SPACING.lg },
+
+  linkIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: RADIUS.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

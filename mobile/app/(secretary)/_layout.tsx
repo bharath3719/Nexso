@@ -82,6 +82,10 @@ export default function SecretaryLayout() {
       <Tabs.Screen name="polls" options={{ href: null, headerTitle: 'Polls' }} />
       <Tabs.Screen name="broadcast" options={{ href: null, headerTitle: 'Broadcast' }} />
       <Tabs.Screen name="expenses" options={{ href: null, headerTitle: 'Income & Expenses' }} />
+      <Tabs.Screen name="ledger" options={{ href: null, headerTitle: 'Ledger Entries' }} />
+      <Tabs.Screen name="new-expense" options={{ href: null, headerTitle: 'Expense' }} />
+      <Tabs.Screen name="new-income" options={{ href: null, headerTitle: 'Other Income' }} />
+      <Tabs.Screen name="annual" options={{ href: null, headerTitle: 'Annual Statement' }} />
       <Tabs.Screen name="profile" options={{ href: null, headerTitle: 'Account' }} />
     </Tabs>
   );

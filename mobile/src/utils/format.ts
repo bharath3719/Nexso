@@ -83,6 +83,49 @@ export function currentMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/** Current year as 'YYYY'. */
+export function currentYear(): string {
+  return String(new Date().getFullYear());
+}
+
+/**
+ * Date → 'YYYY-MM-DD' for the ledger endpoints, which store a DATE column.
+ * Built from the local components rather than toISOString(), which converts to
+ * UTC first and so files an evening entry in India under the previous day.
+ */
+export function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Parses what the API returns for a DATE column back into a local Date.
+ *
+ * The two forms need opposite handling, and getting it wrong is not cosmetic —
+ * the edit form round-trips this value straight back through toISODate, so a
+ * one-day error walks the date backwards on every save:
+ *
+ *  • Full timestamp ('2026-08-18T18:30:00.000Z') — what node-postgres actually
+ *    returns for a DATE column, midnight local serialised as UTC. It names an
+ *    instant, so `new Date` converts it back to the right local day. Slicing
+ *    the first 10 characters would read the UTC day, which is the day BEFORE
+ *    anywhere east of Greenwich — India included.
+ *  • Bare date ('2026-08-19') — names a calendar day with no zone. `new Date`
+ *    reads it as UTC midnight, which lands on the previous day west of
+ *    Greenwich, so this one is built from its parts in local time.
+ */
+export function fromISODate(value?: string | null): Date {
+  if (!value) return new Date();
+
+  if (value.includes('T')) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  }
+
+  const [y, m, d] = value.split('-').map(Number);
+  if (!y || !m || !d) return new Date();
+  return new Date(y, m - 1, d);
+}
+
 /** Shifts a 'YYYY-MM' string by n months. `addMonths('2026-01', -1)` → '2025-12'. */
 export function addMonths(month: string, n: number): string {
   const [y, m] = month.split('-').map(Number);
