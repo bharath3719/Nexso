@@ -15,7 +15,25 @@
  * are already compliant, so they are reused verbatim.
  */
 
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+
+/**
+ * Storage backend.
+ *
+ * expo-secure-store has no web implementation — its web shim is an empty
+ * object, so `SecureStore.setItemAsync` is `undefined` there and calling it
+ * throws rather than failing soft. `expo start --web` is only used to preview
+ * screens during development (shipped builds are native), so web falls back to
+ * localStorage. Do not treat a token stored this way as secure.
+ */
+const store = Platform.OS === 'web'
+  ? {
+      setItemAsync: async (k: string, v: string) => { localStorage.setItem(k, v); },
+      getItemAsync: async (k: string) => localStorage.getItem(k),
+      deleteItemAsync: async (k: string) => { localStorage.removeItem(k); },
+    }
+  : SecureStore;
 
 /**
  * Values as the backend emits them — `auth_accounts.portal_role`, returned
@@ -83,11 +101,11 @@ export function toSession(res: LoginResponse): Session {
 }
 
 export async function saveSession(session: Session): Promise<void> {
-  await SecureStore.setItemAsync(KEY, JSON.stringify(session));
+  await store.setItemAsync(KEY, JSON.stringify(session));
 }
 
 export async function loadSession(): Promise<Session | null> {
-  const raw = await SecureStore.getItemAsync(KEY).catch(() => null);
+  const raw = await store.getItemAsync(KEY).catch(() => null);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Session;
@@ -97,11 +115,11 @@ export async function loadSession(): Promise<Session | null> {
   } catch {
     // Corrupt entry (interrupted write, or a shape from an older build).
     // Drop it instead of wedging the app on the splash screen forever.
-    await SecureStore.deleteItemAsync(KEY).catch(() => {});
+    await store.deleteItemAsync(KEY).catch(() => {});
     return null;
   }
 }
 
 export async function clearSession(): Promise<void> {
-  await SecureStore.deleteItemAsync(KEY).catch(() => {});
+  await store.deleteItemAsync(KEY).catch(() => {});
 }
